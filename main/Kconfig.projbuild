@@ -39,14 +39,14 @@ menu "Minin-Boiler Configuration"
     config DS2480_UART_RXD
         int "DS2480 RxD pin number"
         range ENV_GPIO_RANGE_MIN ENV_GPIO_IN_RANGE_MAX
-        default 19
+        default 18
         help
             GPIO number for DS2480 RX pin.
 
     config DS2480_UART_TXD
         int "DS2480 TxD pin number"
         range ENV_GPIO_RANGE_MIN ENV_GPIO_OUT_RANGE_MAX
-        default 18
+        default 19
         help
             GPIO number for DS2480 TX pin.
 
