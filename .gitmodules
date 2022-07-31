@@ -1,0 +1,3 @@
+[submodule "hw_ow"]
+    path = components/hw_ow
+    url = git@github.com:AvatarSD/esp_hw_ow.git
