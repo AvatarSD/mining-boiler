@@ -391,6 +391,8 @@ void hlt_mon_task(void *ctx) {
             continue;
         }
 
+        hw_ow_change_baud(hw_ow, PARMSET_115200);
+
         /**/
         for (;;) {
             const uint8_t buff_sz = 16;
@@ -402,11 +404,12 @@ void hlt_mon_task(void *ctx) {
                 ESP_LOGW(__func__, "Zero sensors founded, continue");
                 continue;
             }
-            ESP_LOGI(__func__, "Sensors count: %i", sensors);
+            ESP_LOGD(__func__, "Sensors count: %i", sensors);
 
-            for (uint8_t i = 0; rom_is_null(&buff[i]) && i < buff_sz; i++) {
-                float temp;
+            for (uint8_t i = 0; i < sensors; i++) {
+                if (rom_is_null(&buff[i])) continue;
 
+                float temp = 0;
                 for (uint8_t n = 0; n < 3; n++) {
                     if (ow_temp_read_sensor(hw_ow, &buff[i], &temp)) {
                         ESP_LOGI(__func__, "Sensor: %s, temp: %03.2f", rom_to_string(&buff[i]),
@@ -417,8 +420,6 @@ void hlt_mon_task(void *ctx) {
                     break;
                 }
             }
-
-            // vTaskDelay(500 / portTICK_PERIOD_MS);
         }
 
         hw_ow_delete(hw_ow);
