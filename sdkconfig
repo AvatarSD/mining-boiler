@@ -297,10 +297,14 @@ CONFIG_PARTITION_TABLE_MD5=y
 # end of Partition Table
 
 #
-# Example Configuration
+# Minin-Boiler Configuration
 #
 # CONFIG_EXAMPLE_BASIC_AUTH is not set
-# end of Example Configuration
+CONFIG_DS2480_UART_NUM=1
+CONFIG_DS2480_UART_RXD=19
+CONFIG_DS2480_UART_TXD=18
+CONFIG_DS2480_ENABLE=-1
+# end of Minin-Boiler Configuration
 
 #
 # Example Connection Configuration

@@ -1,4 +1,4 @@
-menu "Example Configuration"
+menu "Minin-Boiler Configuration"
 
     config EXAMPLE_BASIC_AUTH
         bool "Basic Authentication"
@@ -25,5 +25,36 @@ menu "Example Configuration"
         default "ESP32Webserver"
         help
             The client's password which used for basic authenticate.
+
+    config DS2480_UART_NUM
+        int "DS2480 uart number"
+
+        range 0 2 if IDF_TARGET_ESP32 || IDF_TARGET_ESP32S3
+        default 2 if IDF_TARGET_ESP32 || IDF_TARGET_ESP32S3
+        range 0 1 if IDF_TARGET_ESP32S2 || IDF_TARGET_ESP32C3 || IDF_TARGET_ESP32C2 || IDF_TARGET_ESP32H2
+        default 1 if IDF_TARGET_ESP32S2 || IDF_TARGET_ESP32C3 || IDF_TARGET_ESP32C2 || IDF_TARGET_ESP32H2
+        help
+            UART communication port number for the DS2480B 1-Wire controller.
+
+    config DS2480_UART_RXD
+        int "DS2480 RxD pin number"
+        range ENV_GPIO_RANGE_MIN ENV_GPIO_IN_RANGE_MAX
+        default 19
+        help
+            GPIO number for DS2480 RX pin.
+
+    config DS2480_UART_TXD
+        int "DS2480 TxD pin number"
+        range ENV_GPIO_RANGE_MIN ENV_GPIO_OUT_RANGE_MAX
+        default 18
+        help
+            GPIO number for DS2480 TX pin.
+
+    config DS2480_ENABLE
+        int "DS2480 enable pin number(if exist)"
+        range -1 ENV_GPIO_OUT_RANGE_MAX
+        default -1
+        help
+            GPIO number for DS2480 enable pin if exist
 
 endmenu
