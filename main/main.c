@@ -15,7 +15,6 @@
 #include <nvs_flash.h>
 #include <sys/param.h>
 
-#include "esp_eth.h"
 #include "esp_netif.h"
 #include "esp_tls_crypto.h"
 #include "freertos/FreeRTOS.h"
@@ -382,6 +381,8 @@ static void connect_handler(void *arg, esp_event_base_t event_base, int32_t even
  */
 void hlt_mon_task(void *ctx) {
     for (;;) {
+
+        /* init */
         vTaskDelay(500 / portTICK_PERIOD_MS);
         /* alloc new ow hw */
         hw_ow_t *hw_ow = hw_ow_new(CONFIG_DS2480_UART_NUM, CONFIG_DS2480_UART_TXD,
@@ -393,7 +394,7 @@ void hlt_mon_task(void *ctx) {
 
         hw_ow_change_baud(hw_ow, PARMSET_115200);
 
-        /**/
+        /* loop */
         for (;;) {
             const uint8_t buff_sz = 16;
             struct rom_t buff[buff_sz];
