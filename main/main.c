@@ -18,10 +18,12 @@
 #include "esp_netif.h"
 #include "esp_tls_crypto.h"
 #include "freertos/FreeRTOS.h"
+#include "fw_config.h"
 #include "hw_ow.h"
 #include "nvs_flash.h"
 #include "ow_temp.h"
 #include "protocol_examples_common.h"
+#include "ssd1306.h"
 
 /* A simple example that demonstrates how to create GET and POST
  * handlers for the web server.
@@ -381,10 +383,10 @@ static void connect_handler(void *arg, esp_event_base_t event_base, int32_t even
  */
 void hlt_mon_task(void *ctx) {
     for (;;) {
-
         /* init */
         vTaskDelay(500 / portTICK_PERIOD_MS);
-        /* alloc new ow hw */
+
+        /* alloc new hardware 1-wire */
         hw_ow_t *hw_ow = hw_ow_new(CONFIG_DS2480_UART_NUM, CONFIG_DS2480_UART_TXD,
                                    CONFIG_DS2480_UART_RXD, CONFIG_DS2480_ENABLE);
         if (!hw_ow) {
@@ -394,11 +396,43 @@ void hlt_mon_task(void *ctx) {
 
         hw_ow_change_baud(hw_ow, PARMSET_115200);
 
+        /* screen init */
+        ssd1306_handle_t ssd1306_dev = NULL;
+
+        i2c_config_t conf;
+        conf.mode = I2C_MODE_MASTER;
+        conf.sda_io_num = (gpio_num_t)I2C_MASTER_SDA_IO;
+        conf.sda_pullup_en = GPIO_PULLUP_ENABLE;
+        conf.scl_io_num = (gpio_num_t)I2C_MASTER_SCL_IO;
+        conf.scl_pullup_en = GPIO_PULLUP_ENABLE;
+        conf.master.clk_speed = I2C_MASTER_FREQ_HZ;
+        conf.clk_flags = I2C_SCLK_SRC_FLAG_FOR_NOMAL;
+
+        i2c_param_config(I2C_MASTER_NUM, &conf);
+        i2c_driver_install(I2C_MASTER_NUM, conf.mode, 0, 0, 0);
+
+        ssd1306_dev = ssd1306_create(I2C_MASTER_NUM, SSD1306_I2C_ADDRESS);
+        ssd1306_refresh_gram(ssd1306_dev);
+        ssd1306_clear_screen(ssd1306_dev, 0x00);
+
+        /* main loop cycle counter */
+        int cntr = 0;
+
         /* loop */
         for (;;) {
             const uint8_t buff_sz = 16;
             struct rom_t buff[buff_sz];
             memset(buff, 0, sizeof(buff));
+
+            /* draw last frame */
+            int ret = ssd1306_refresh_gram(ssd1306_dev);
+            if (ret) {
+                ESP_LOGI(__func__, "Count: %i, gram ret: %i", cntr, ret);
+                break;
+            }
+            char data_str[64] = {0};
+            sprintf(data_str, "Cntr: %u", ++cntr);
+            // ssd1306_draw_string(ssd1306_dev, 5, 10, (const uint8_t *)data_str, 10, 1);
 
             int sensors = ow_temp_search_all_temp_sensors(hw_ow, buff, buff_sz);
             if (!sensors) {
@@ -411,18 +445,23 @@ void hlt_mon_task(void *ctx) {
                 if (rom_is_null(&buff[i])) continue;
 
                 float temp = 0;
+                char *rom_name = (char *)rom_to_string(&buff[i]);
+                rom_name[6] = '\0';  // cut rom
                 for (uint8_t n = 0; n < 3; n++) {
                     if (ow_temp_read_sensor(hw_ow, &buff[i], &temp)) {
-                        ESP_LOGI(__func__, "Sensor: %s, temp: %03.2f", rom_to_string(&buff[i]),
-                                 temp);
+                        snprintf(data_str, sizeof(data_str), "%s: %03.2f`C", rom_name, temp);
+                        ESP_LOGI(__func__, "%s", data_str);
                         break;
-                    } else if (n == 3 - 1)
-                        ESP_LOGW(__func__, "Sensor: %s, error", rom_to_string(&buff[i]));
-                    break;
+                    } else if (n == 3 - 1) {
+                        snprintf(data_str, sizeof(data_str), "%s: error", rom_name);
+                        ESP_LOGW(__func__, "%s", data_str);
+                    }
                 }
+                ssd1306_draw_string(ssd1306_dev, 0, 16 * i, (const uint8_t *)data_str, 16, 1);
             }
         }
 
+        ssd1306_delete(ssd1306_dev);
         hw_ow_delete(hw_ow);
     }
 }
@@ -456,12 +495,13 @@ void app_main(void) {
                                                &disconnect_handler, &server));
 #endif  // CONFIG_EXAMPLE_CONNECT_ETHERNET
 
-    /* run health monitor */
-    TaskHandle_t hlt_mon_handler = NULL;
-    BaseType_t hlth_mon_ret = xTaskCreate(hlt_mon_task, "heaalth monitor", 4096, NULL,
-                                          tskIDLE_PRIORITY + 5, &hlt_mon_handler);
-
     /* Start the server for the first time */
     server = start_webserver();
+
+    /* run health monitor */
+    TaskHandle_t hlt_mon_handler = NULL;
+    BaseType_t hlth_mon_ret = xTaskCreate(hlt_mon_task, "heaalth monitor", 4096, server,
+                                          tskIDLE_PRIORITY + 5, &hlt_mon_handler);
+
     // ser
 }
