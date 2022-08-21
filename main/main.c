@@ -377,7 +377,10 @@ static void connect_handler(void *arg, esp_event_base_t event_base, int32_t even
     }
 }
 
-/********** main logic ***********/
+/********** main logic **********
+ * @todo split plain code into oop abstractions
+ */
+
 /**
  *  @brief read and display sensors data
  */
@@ -391,7 +394,8 @@ void read_and_draw_sensors(hw_ow_t *hw_ow, rom_t *sensors_rom_arr, uint8_t rom_a
     int sensors = ow_temp_search_all_temp_sensors(hw_ow, sensors_rom_arr, rom_arr_max_count);
     if (!sensors) {
         ESP_LOGW(__func__, "Zero sensors founded, continue");
-        ssd1306_draw_string(display, 0, draw_y_offset, (const uint8_t*)"Zero sensors founded", 16, 1);
+        ssd1306_draw_string(display, 0, draw_y_offset, (const uint8_t *)"Zero sensors founded", 16,
+                            1);
         return;
     }
     ESP_LOGD(__func__, "Sensors count: %i", sensors);
@@ -427,8 +431,7 @@ void hlt_mon_task(void *ctx) {
         vTaskDelay(500 / portTICK_PERIOD_MS);
 
         /* alloc new hardware 1-wire */
-        hw_ow_t *hw_ow = hw_ow_new(CONFIG_DS2480_UART_NUM, CONFIG_DS2480_UART_TXD,
-                                   CONFIG_DS2480_UART_RXD, CONFIG_DS2480_ENABLE);
+        hw_ow_t *hw_ow = hw_ow_new(UART_HW_OW_NUM, GPIO_HW_OW_TX, GPIO_HW_OW_RX, GPIO_HW_OW_EN);
         if (!hw_ow) {
             ESP_LOGW(__func__, "hw_ow allocation error");
             continue;
@@ -441,9 +444,9 @@ void hlt_mon_task(void *ctx) {
 
         i2c_config_t conf;
         conf.mode = I2C_MODE_MASTER;
-        conf.sda_io_num = (gpio_num_t)I2C_MASTER_SDA_IO;
+        conf.sda_io_num = (gpio_num_t)GPIO_MASTER_SDA;
         conf.sda_pullup_en = GPIO_PULLUP_ENABLE;
-        conf.scl_io_num = (gpio_num_t)I2C_MASTER_SCL_IO;
+        conf.scl_io_num = (gpio_num_t)GPIO_MASTER_SCL;
         conf.scl_pullup_en = GPIO_PULLUP_ENABLE;
         conf.master.clk_speed = I2C_MASTER_FREQ_HZ;
         conf.clk_flags = I2C_SCLK_SRC_FLAG_FOR_NOMAL;
@@ -455,7 +458,14 @@ void hlt_mon_task(void *ctx) {
         ssd1306_refresh_gram(ssd1306_dev);
         ssd1306_clear_screen(ssd1306_dev, 0x00);
 
-        /* main loop cycle counter */
+        /* i/o gpio init */
+
+        /* pcntr init */
+
+        /**
+         * @brief main loop cycle counter
+         * @todo create common struct
+         */
         int cntr = 0;
 
         /* loop */
@@ -483,6 +493,8 @@ void hlt_mon_task(void *ctx) {
                 break;
             }
         }
+
+        ESP_LOGE(__func__, "Main loop exit, restarting...");
 
         ssd1306_delete(ssd1306_dev);
         hw_ow_delete(hw_ow);
