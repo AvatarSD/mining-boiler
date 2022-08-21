@@ -377,6 +377,46 @@ static void connect_handler(void *arg, esp_event_base_t event_base, int32_t even
     }
 }
 
+/********** main logic ***********/
+/**
+ *  @brief read and display sensors data
+ */
+void read_and_draw_sensors(hw_ow_t *hw_ow, rom_t *sensors_rom_arr, uint8_t rom_arr_max_count,
+                           ssd1306_handle_t *display, uint8_t draw_y_offset) {
+    if (!display) {
+        ESP_LOGE(__func__, "no display");
+        return;
+    }
+
+    int sensors = ow_temp_search_all_temp_sensors(hw_ow, sensors_rom_arr, rom_arr_max_count);
+    if (!sensors) {
+        ESP_LOGW(__func__, "Zero sensors founded, continue");
+        ssd1306_draw_string(display, 0, draw_y_offset, (const uint8_t*)"Zero sensors founded", 16, 1);
+        return;
+    }
+    ESP_LOGD(__func__, "Sensors count: %i", sensors);
+
+    char data_str[24] = {0};
+    for (uint8_t i = 0; i < sensors; i++) {
+        if (rom_is_null(&sensors_rom_arr[i])) continue;
+
+        float temp = 0;
+        char *rom_name = (char *)rom_to_string(&sensors_rom_arr[i]);
+        rom_name[6] = '\0';  // cut rom
+        for (uint8_t n = 0; n < 3; n++) {
+            if (ow_temp_read_sensor(hw_ow, &sensors_rom_arr[i], &temp)) {
+                snprintf(data_str, sizeof(data_str), "%s: %03.2f`C", rom_name, temp);
+                ESP_LOGI(__func__, "%s", data_str);
+                break;
+            } else if (n == 3 - 1) {
+                snprintf(data_str, sizeof(data_str), "%s: error", rom_name);
+                ESP_LOGW(__func__, "%s", data_str);
+            }
+        }
+        ssd1306_draw_string(display, 0, draw_y_offset + 16 * i, (const uint8_t *)data_str, 16, 1);
+    }
+}
+
 /**
  *  @brief main task for health logic
  *
@@ -420,44 +460,27 @@ void hlt_mon_task(void *ctx) {
 
         /* loop */
         for (;;) {
+            /**
+             * @brief common context
+             * @todo create common struct
+             */
             const uint8_t buff_sz = 16;
-            struct rom_t buff[buff_sz];
+            rom_t buff[buff_sz];
             memset(buff, 0, sizeof(buff));
 
-            /* draw last frame */
+            /* draw header */
+            char data_str[64] = {0};
+            sprintf(data_str, "Header: %u", ++cntr);
+            ssd1306_draw_string(ssd1306_dev, 0, 0, (const uint8_t *)data_str, 16, 1);
+
+            /* read and draw sensors*/
+            read_and_draw_sensors(hw_ow, buff, buff_sz, ssd1306_dev, 16);
+
+            /* draw out last frame */
             int ret = ssd1306_refresh_gram(ssd1306_dev);
             if (ret) {
                 ESP_LOGI(__func__, "Count: %i, gram ret: %i", cntr, ret);
                 break;
-            }
-            char data_str[64] = {0};
-            sprintf(data_str, "Cntr: %u", ++cntr);
-            // ssd1306_draw_string(ssd1306_dev, 5, 10, (const uint8_t *)data_str, 10, 1);
-
-            int sensors = ow_temp_search_all_temp_sensors(hw_ow, buff, buff_sz);
-            if (!sensors) {
-                ESP_LOGW(__func__, "Zero sensors founded, continue");
-                continue;
-            }
-            ESP_LOGD(__func__, "Sensors count: %i", sensors);
-
-            for (uint8_t i = 0; i < sensors; i++) {
-                if (rom_is_null(&buff[i])) continue;
-
-                float temp = 0;
-                char *rom_name = (char *)rom_to_string(&buff[i]);
-                rom_name[6] = '\0';  // cut rom
-                for (uint8_t n = 0; n < 3; n++) {
-                    if (ow_temp_read_sensor(hw_ow, &buff[i], &temp)) {
-                        snprintf(data_str, sizeof(data_str), "%s: %03.2f`C", rom_name, temp);
-                        ESP_LOGI(__func__, "%s", data_str);
-                        break;
-                    } else if (n == 3 - 1) {
-                        snprintf(data_str, sizeof(data_str), "%s: error", rom_name);
-                        ESP_LOGW(__func__, "%s", data_str);
-                    }
-                }
-                ssd1306_draw_string(ssd1306_dev, 0, 16 * i, (const uint8_t *)data_str, 16, 1);
             }
         }
 
@@ -503,5 +526,5 @@ void app_main(void) {
     BaseType_t hlth_mon_ret = xTaskCreate(hlt_mon_task, "heaalth monitor", 4096, server,
                                           tskIDLE_PRIORITY + 5, &hlt_mon_handler);
 
-    // ser
+    (void)hlth_mon_ret;
 }
