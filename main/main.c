@@ -7,6 +7,7 @@
    CONDITIONS OF ANY KIND, either express or implied.
 */
 
+#include <driver/gpio.h>
 #include <esp_event.h>
 #include <esp_http_server.h>
 #include <esp_log.h>
@@ -396,6 +397,9 @@ void read_and_draw_sensors(hw_ow_t *hw_ow, rom_t *sensors_rom_arr, uint8_t rom_a
         ESP_LOGW(__func__, "Zero sensors founded, continue");
         ssd1306_draw_string(display, 0, draw_y_offset, (const uint8_t *)"Zero sensors founded", 16,
                             1);
+
+        /** @todo remove later */
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
         return;
     }
     ESP_LOGD(__func__, "Sensors count: %i", sensors);
@@ -458,9 +462,32 @@ void hlt_mon_task(void *ctx) {
         ssd1306_refresh_gram(ssd1306_dev);
         ssd1306_clear_screen(ssd1306_dev, 0x00);
 
-        /* i/o gpio init */
-
         /* pcntr init */
+        // GPIO_CNT_CLNT 34
+        // GPIO_CNT_BOIL 35
+        // GPIO_CNT_WRK0 32
+
+        /* i/o gpio init */
+        uint32_t out_pins_sel =
+            ((1ul << GPIO_TEMP_WRK0_IN) | (1ul << GPIO_TEMP_WRK0_OUT) | (1ul << GPIO_TEMP_CLNT_IN) |
+             (1ul << GPIO_TEMP_CLNT_OUT) | (1ul << GPIO_TEMP_BOIL_BOTH) | (1ul << GPIO_TEMP_COLER) |
+             (1ul << GPIO_TEMP_AUX0) | (1ul << GPIO_CTRL_WRK0) | (1ul << GPIO_CTRL_PUMP_PRI) |
+             (1ul << GPIO_CTRL_PUMP_SEC) | (1ul << GPIO_CTRL_FAN0) | (1ul << GPIO_CTRL_FAN1));
+
+        // zero-initialize the config structure.
+        gpio_config_t io_conf = {};
+        // disable interrupt
+        io_conf.intr_type = GPIO_INTR_DISABLE;
+        // set as output mode
+        io_conf.mode = GPIO_MODE_OUTPUT;
+        // bit mask of the pins that you want to set,e.g.GPIO18/19
+        io_conf.pin_bit_mask = out_pins_sel;
+        // disable pull-down mode
+        io_conf.pull_down_en = 0;
+        // disable pull-up mode
+        io_conf.pull_up_en = 0;
+        // configure GPIO with the given settings
+        gpio_config(&io_conf);
 
         /**
          * @brief main loop cycle counter
@@ -478,20 +505,120 @@ void hlt_mon_task(void *ctx) {
             rom_t buff[buff_sz];
             memset(buff, 0, sizeof(buff));
 
-            /* draw header */
             char data_str[64] = {0};
-            sprintf(data_str, "Header: %u", ++cntr);
+
+            /**
+             * @todo Split temp sensors and main logic tasks
+             *       Temp sensors task split INTO TWO procedures:
+             *         * sensors reading
+             *         * sensors scanning
+             *       Split display and temp sens into separate tasks
+             */
+
+            /* draw worker in temp */
+            ssd1306_clear_screen(ssd1306_dev, 0x00);
+            sprintf(data_str, "%3u: WRK0 I(1/7)", cntr);
             ssd1306_draw_string(ssd1306_dev, 0, 0, (const uint8_t *)data_str, 16, 1);
-
             /* read and draw sensors*/
+            gpio_set_level(GPIO_TEMP_WRK0_IN, 1);
             read_and_draw_sensors(hw_ow, buff, buff_sz, ssd1306_dev, 16);
-
+            gpio_set_level(GPIO_TEMP_WRK0_IN, 0);
             /* draw out last frame */
             int ret = ssd1306_refresh_gram(ssd1306_dev);
             if (ret) {
                 ESP_LOGI(__func__, "Count: %i, gram ret: %i", cntr, ret);
                 break;
             }
+
+            /* draw worker out temp */
+            ssd1306_clear_screen(ssd1306_dev, 0x00);
+            sprintf(data_str, "%3u: WRK0 O(2/7)", cntr);
+            ssd1306_draw_string(ssd1306_dev, 0, 0, (const uint8_t *)data_str, 16, 1);
+            /* read and draw sensors*/
+            gpio_set_level(GPIO_TEMP_WRK0_OUT, 1);
+            read_and_draw_sensors(hw_ow, buff, buff_sz, ssd1306_dev, 16);
+            gpio_set_level(GPIO_TEMP_WRK0_OUT, 0);
+            /* draw out last frame */
+            ret = ssd1306_refresh_gram(ssd1306_dev);
+            if (ret) {
+                ESP_LOGI(__func__, "Count: %i, gram ret: %i", cntr, ret);
+                break;
+            }
+
+            /* draw coolant in temp */
+            ssd1306_clear_screen(ssd1306_dev, 0x00);
+            sprintf(data_str, "%3u: CLNT I(3/7)", cntr);
+            ssd1306_draw_string(ssd1306_dev, 0, 0, (const uint8_t *)data_str, 16, 1);
+            /* read and draw sensors*/
+            gpio_set_level(GPIO_TEMP_CLNT_IN, 1);
+            read_and_draw_sensors(hw_ow, buff, buff_sz, ssd1306_dev, 16);
+            gpio_set_level(GPIO_TEMP_CLNT_IN, 0);
+            /* draw out last frame */
+            ret = ssd1306_refresh_gram(ssd1306_dev);
+            if (ret) {
+                ESP_LOGI(__func__, "Count: %i, gram ret: %i", cntr, ret);
+                break;
+            }
+
+            /* draw coolant out temp */
+            ssd1306_clear_screen(ssd1306_dev, 0x00);
+            sprintf(data_str, "%3u: CLNT O(4/7)", cntr);
+            ssd1306_draw_string(ssd1306_dev, 0, 0, (const uint8_t *)data_str, 16, 1);
+            /* read and draw sensors*/
+            gpio_set_level(GPIO_TEMP_CLNT_OUT, 1);
+            read_and_draw_sensors(hw_ow, buff, buff_sz, ssd1306_dev, 16);
+            gpio_set_level(GPIO_TEMP_CLNT_OUT, 0);
+            /* draw out last frame */
+            ret = ssd1306_refresh_gram(ssd1306_dev);
+            if (ret) {
+                ESP_LOGI(__func__, "Count: %i, gram ret: %i", cntr, ret);
+                break;
+            }
+
+            /* draw boiler both sensors temp */
+            ssd1306_clear_screen(ssd1306_dev, 0x00);
+            sprintf(data_str, "%3u: BOILER(5/7)", cntr);
+            ssd1306_draw_string(ssd1306_dev, 0, 0, (const uint8_t *)data_str, 16, 1);
+            /* read and draw sensors*/
+            gpio_set_level(GPIO_TEMP_BOIL_BOTH, 1);
+            read_and_draw_sensors(hw_ow, buff, buff_sz, ssd1306_dev, 16);
+            gpio_set_level(GPIO_TEMP_BOIL_BOTH, 0);
+            /* draw out last frame */
+            ret = ssd1306_refresh_gram(ssd1306_dev);
+            if (ret) {
+                ESP_LOGI(__func__, "Count: %i, gram ret: %i", cntr, ret);
+                break;
+            }
+            /* draw coler temp */
+            ssd1306_clear_screen(ssd1306_dev, 0x00);
+            sprintf(data_str, "%3u: COOLER(6/7)", cntr);
+            ssd1306_draw_string(ssd1306_dev, 0, 0, (const uint8_t *)data_str, 16, 1);
+            /* read and draw sensors*/
+            gpio_set_level(GPIO_TEMP_COLER, 1);
+            read_and_draw_sensors(hw_ow, buff, buff_sz, ssd1306_dev, 16);
+            gpio_set_level(GPIO_TEMP_COLER, 0);
+            /* draw out last frame */
+            ret = ssd1306_refresh_gram(ssd1306_dev);
+            if (ret) {
+                ESP_LOGI(__func__, "Count: %i, gram ret: %i", cntr, ret);
+                break;
+            }
+            /* draw aux temp */
+            ssd1306_clear_screen(ssd1306_dev, 0x00);
+            sprintf(data_str, "%3u: AUX   (7/7)", cntr);
+            ssd1306_draw_string(ssd1306_dev, 0, 0, (const uint8_t *)data_str, 16, 1);
+            /* read and draw sensors*/
+            gpio_set_level(GPIO_TEMP_AUX0, 1);
+            read_and_draw_sensors(hw_ow, buff, buff_sz, ssd1306_dev, 16);
+            gpio_set_level(GPIO_TEMP_AUX0, 0);
+            /* draw out last frame */
+            ret = ssd1306_refresh_gram(ssd1306_dev);
+            if (ret) {
+                ESP_LOGI(__func__, "Count: %i, gram ret: %i", cntr, ret);
+                break;
+            }
+
+            ++cntr;
         }
 
         ESP_LOGE(__func__, "Main loop exit, restarting...");
