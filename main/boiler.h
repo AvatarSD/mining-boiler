@@ -49,6 +49,7 @@ typedef struct boiler {
     /* components */
     void* server;
     bdc_motor_handle_t cooler_motor;
+    float cooler_motor_pwr;
 
     /* generic counters */
     uint64_t cycles;

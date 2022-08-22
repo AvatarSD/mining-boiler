@@ -44,13 +44,15 @@ static esp_err_t main_page_handler(httpd_req_t *req) {
     snprintf(resp_str, sizeof(resp_str),
              "Worker0 IN: %03.2f`C, OUT: %03.2f`C, Flow: %lu\t\t\t"
              "Coolant IN: %03.2f`C, OUT: %03.2f`C, Flow: %lu\t\t\t"
-             "Boiler  IN: %03.2f`C, OUT: %03.2f`C, Flow: %lu\t\t\t",
+             "Boiler  IN: %03.2f`C, OUT: %03.2f`C, Flow: %lu\t\t\t"
+             "Fan: %3.2f%%, Worker: %s",
              boiler_ctx_copy.workers[0].termal.temp[DIR_IN].temp,
              boiler_ctx_copy.workers[0].termal.temp[DIR_OUT].temp,
              boiler_ctx_copy.workers[0].termal.flow.flow, boiler_ctx_copy.colant.temp[DIR_IN].temp,
              boiler_ctx_copy.colant.temp[DIR_OUT].temp, boiler_ctx_copy.colant.flow.flow,
              boiler_ctx_copy.boiler.temp[DIR_IN].temp, boiler_ctx_copy.boiler.temp[DIR_OUT].temp,
-             boiler_ctx_copy.boiler.flow.flow);
+             boiler_ctx_copy.boiler.flow.flow, boiler_ctx_copy.cooler_motor_pwr,
+             boiler_ctx_copy.workers[0].enabled ? "Enabled" : "Disabled");
     httpd_resp_send(req, resp_str, HTTPD_RESP_USE_STRLEN);
 
     /* After sending the HTTP response the old HTTP request
@@ -380,13 +382,14 @@ void hlt_mon_task(void *ctx) {
             }
 
             /* calc io */
-            if (boiler->colant.temp[DIR_IN].temp > 30) {
-                float temp = boiler->colant.temp[DIR_IN].temp - 30;
-                temp *= BDC_MCPWM_DUTY_TICK_MAX; /* multiply by max duty */
-                temp /= 20;                      /* divide by temp range */
-                bdc_motor_set_speed(boiler->cooler_motor, temp);
-            } else
-                bdc_motor_set_speed(boiler->cooler_motor, 0);
+            boiler->cooler_motor_pwr =
+                boiler->colant.temp[DIR_IN].temp > 30              /* start temp */
+                    ? (boiler->colant.temp[DIR_IN].temp - 30) / 20 /* divide by temp range */
+                    : 0;
+            bdc_motor_set_speed(
+                boiler->cooler_motor,
+                boiler->cooler_motor_pwr * BDC_MCPWM_DUTY_TICK_MAX); /* multiply by max duty */
+
             ++boiler->cycles;
         }
 
