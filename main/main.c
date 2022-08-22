@@ -51,7 +51,7 @@ static esp_err_t main_page_handler(httpd_req_t *req) {
              boiler_ctx_copy.workers[0].termal.flow.flow, boiler_ctx_copy.colant.temp[DIR_IN].temp,
              boiler_ctx_copy.colant.temp[DIR_OUT].temp, boiler_ctx_copy.colant.flow.flow,
              boiler_ctx_copy.boiler.temp[DIR_IN].temp, boiler_ctx_copy.boiler.temp[DIR_OUT].temp,
-             boiler_ctx_copy.boiler.flow.flow, boiler_ctx_copy.cooler_motor_pwr,
+             boiler_ctx_copy.boiler.flow.flow, boiler_ctx_copy.cooler_motor_pwr * 100,
              boiler_ctx_copy.workers[0].enabled ? "Enabled" : "Disabled");
     httpd_resp_send(req, resp_str, HTTPD_RESP_USE_STRLEN);
 
@@ -250,12 +250,17 @@ void hlt_mon_task(void *ctx) {
          */
         boiler_t *boiler = (boiler_t *)ctx;
 
+        /* fan startup test */
         bdc_motor_set_speed(boiler->cooler_motor, 100);
         vTaskDelay(1000 / portTICK_PERIOD_MS);
         bdc_motor_set_speed(boiler->cooler_motor, 0);
         bdc_motor_set_speed(boiler->cooler_motor, 2000);
         vTaskDelay(100 / portTICK_PERIOD_MS);
         bdc_motor_set_speed(boiler->cooler_motor, 0);
+
+        /* assump liquid level is okey */
+        gpio_set_level(GPIO_CTRL_PUMP_PRI, 1);
+        gpio_set_level(GPIO_CTRL_PUMP_SEC, 1);
 
         /* loop */
         for (;;) {
@@ -381,7 +386,9 @@ void hlt_mon_task(void *ctx) {
                 break;
             }
 
-            /* calc io */
+            /* calc flow */
+
+            /* calc cooler */
             boiler->cooler_motor_pwr =
                 boiler->colant.temp[DIR_IN].temp > 30              /* start temp */
                     ? (boiler->colant.temp[DIR_IN].temp - 30) / 20 /* divide by temp range */
@@ -390,10 +397,32 @@ void hlt_mon_task(void *ctx) {
                 boiler->cooler_motor,
                 boiler->cooler_motor_pwr * BDC_MCPWM_DUTY_TICK_MAX); /* multiply by max duty */
 
+            /* calc worker safe zone */
+            bool worker_en0 = boiler->workers[0].termal.flow.flow > 3000 &&
+                              boiler->workers[0].termal.temp[DIR_IN].temp < 50 &&
+                              boiler->workers[0].termal.temp[DIR_OUT].temp < 60;
+            if (worker_en0 != boiler->workers[0].enabled) {
+                boiler->workers[0].enabled = worker_en0;
+                ESP_LOGI(__func__, "Worker 0: %s",
+                         boiler->workers[0].enabled ? "Enabled" : "Disabled");
+            }
+            gpio_set_level(GPIO_CTRL_WRK0, boiler->workers[0].enabled);
+
+            /* calc fans */
+            gpio_set_level(
+                GPIO_CTRL_FAN0,
+                (boiler->cooler_temps[DIR_IN].temp + boiler->cooler_temps[DIR_OUT].temp) / 2 > 35);
+            gpio_set_level(
+                GPIO_CTRL_FAN1,
+                (boiler->aux_temps[DIR_IN].temp + boiler->aux_temps[DIR_OUT].temp) / 2 > 35);
+
+            /* cycle */
             ++boiler->cycles;
         }
 
         ESP_LOGE(__func__, "Main loop exit, restarting(%llu times)...", ++boiler->loop_err);
+        gpio_set_level(GPIO_CTRL_PUMP_PRI, 0);
+        gpio_set_level(GPIO_CTRL_PUMP_SEC, 0);
 
         ssd1306_delete(ssd1306_dev);
         hw_ow_delete(hw_ow);
