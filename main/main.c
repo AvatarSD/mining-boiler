@@ -16,6 +16,7 @@
 #include <nvs_flash.h>
 #include <sys/param.h>
 
+#include "boiler.h"
 #include "esp_netif.h"
 #include "esp_tls_crypto.h"
 #include "freertos/FreeRTOS.h"
@@ -26,328 +27,69 @@
 #include "protocol_examples_common.h"
 #include "ssd1306.h"
 
-/* A simple example that demonstrates how to create GET and POST
- * handlers for the web server.
- */
-
-static const char *TAG = "example";
-
-#if CONFIG_EXAMPLE_BASIC_AUTH
-
-typedef struct {
-    char *username;
-    char *password;
-} basic_auth_info_t;
-
-#define HTTPD_401 "401 UNAUTHORIZED" /*!< HTTP Response 401 */
-
-static char *http_auth_basic(const char *username, const char *password) {
-    int out;
-    char *user_info = NULL;
-    char *digest = NULL;
-    size_t n = 0;
-    asprintf(&user_info, "%s:%s", username, password);
-    if (!user_info) {
-        ESP_LOGE(TAG, "No enough memory for user information");
-        return NULL;
-    }
-    esp_crypto_base64_encode(NULL, 0, &n, (const unsigned char *)user_info, strlen(user_info));
-
-    /* 6: The length of the "Basic " string
-     * n: Number of bytes for a base64 encode format
-     * 1: Number of bytes for a reserved which be used to fill zero
-     */
-    digest = calloc(1, 6 + n + 1);
-    if (digest) {
-        strcpy(digest, "Basic ");
-        esp_crypto_base64_encode((unsigned char *)digest + 6, n, (size_t *)&out,
-                                 (const unsigned char *)user_info, strlen(user_info));
-    }
-    free(user_info);
-    return digest;
-}
-
 /* An HTTP GET handler */
-static esp_err_t basic_auth_get_handler(httpd_req_t *req) {
-    char *buf = NULL;
-    size_t buf_len = 0;
-    basic_auth_info_t *basic_auth_info = req->user_ctx;
-
-    buf_len = httpd_req_get_hdr_value_len(req, "Authorization") + 1;
-    if (buf_len > 1) {
-        buf = calloc(1, buf_len);
-        if (!buf) {
-            ESP_LOGE(TAG, "No enough memory for basic authorization");
-            return ESP_ERR_NO_MEM;
-        }
-
-        if (httpd_req_get_hdr_value_str(req, "Authorization", buf, buf_len) == ESP_OK) {
-            ESP_LOGI(TAG, "Found header => Authorization: %s", buf);
-        } else {
-            ESP_LOGE(TAG, "No auth value received");
-        }
-
-        char *auth_credentials =
-            http_auth_basic(basic_auth_info->username, basic_auth_info->password);
-        if (!auth_credentials) {
-            ESP_LOGE(TAG, "No enough memory for basic authorization credentials");
-            free(buf);
-            return ESP_ERR_NO_MEM;
-        }
-
-        if (strncmp(auth_credentials, buf, buf_len)) {
-            ESP_LOGE(TAG, "Not authenticated");
-            httpd_resp_set_status(req, HTTPD_401);
-            httpd_resp_set_type(req, "application/json");
-            httpd_resp_set_hdr(req, "Connection", "keep-alive");
-            httpd_resp_set_hdr(req, "WWW-Authenticate", "Basic realm=\"Hello\"");
-            httpd_resp_send(req, NULL, 0);
-        } else {
-            ESP_LOGI(TAG, "Authenticated!");
-            char *basic_auth_resp = NULL;
-            httpd_resp_set_status(req, HTTPD_200);
-            httpd_resp_set_type(req, "application/json");
-            httpd_resp_set_hdr(req, "Connection", "keep-alive");
-            asprintf(&basic_auth_resp, "{\"authenticated\": true,\"user\": \"%s\"}",
-                     basic_auth_info->username);
-            if (!basic_auth_resp) {
-                ESP_LOGE(TAG, "No enough memory for basic authorization response");
-                free(auth_credentials);
-                free(buf);
-                return ESP_ERR_NO_MEM;
-            }
-            httpd_resp_send(req, basic_auth_resp, strlen(basic_auth_resp));
-            free(basic_auth_resp);
-        }
-        free(auth_credentials);
-        free(buf);
-    } else {
-        ESP_LOGE(TAG, "No auth header received");
-        httpd_resp_set_status(req, HTTPD_401);
-        httpd_resp_set_type(req, "application/json");
-        httpd_resp_set_hdr(req, "Connection", "keep-alive");
-        httpd_resp_set_hdr(req, "WWW-Authenticate", "Basic realm=\"Hello\"");
-        httpd_resp_send(req, NULL, 0);
-    }
-
-    return ESP_OK;
-}
-
-static httpd_uri_t basic_auth = {
-    .uri = "/basic_auth",
-    .method = HTTP_GET,
-    .handler = basic_auth_get_handler,
-};
-
-static void httpd_register_basic_auth(httpd_handle_t server) {
-    basic_auth_info_t *basic_auth_info = calloc(1, sizeof(basic_auth_info_t));
-    if (basic_auth_info) {
-        basic_auth_info->username = CONFIG_EXAMPLE_BASIC_AUTH_USERNAME;
-        basic_auth_info->password = CONFIG_EXAMPLE_BASIC_AUTH_PASSWORD;
-
-        basic_auth.user_ctx = basic_auth_info;
-        httpd_register_uri_handler(server, &basic_auth);
-    }
-}
-#endif
-
-/* An HTTP GET handler */
-static esp_err_t hello_get_handler(httpd_req_t *req) {
-    char *buf;
-    size_t buf_len;
-
-    /* Get header value string length and allocate memory for length + 1,
-     * extra byte for null termination */
-    buf_len = httpd_req_get_hdr_value_len(req, "Host") + 1;
-    if (buf_len > 1) {
-        buf = malloc(buf_len);
-        /* Copy null terminated value string into buffer */
-        if (httpd_req_get_hdr_value_str(req, "Host", buf, buf_len) == ESP_OK) {
-            ESP_LOGI(TAG, "Found header => Host: %s", buf);
-        }
-        free(buf);
-    }
-
-    buf_len = httpd_req_get_hdr_value_len(req, "Test-Header-2") + 1;
-    if (buf_len > 1) {
-        buf = malloc(buf_len);
-        if (httpd_req_get_hdr_value_str(req, "Test-Header-2", buf, buf_len) == ESP_OK) {
-            ESP_LOGI(TAG, "Found header => Test-Header-2: %s", buf);
-        }
-        free(buf);
-    }
-
-    buf_len = httpd_req_get_hdr_value_len(req, "Test-Header-1") + 1;
-    if (buf_len > 1) {
-        buf = malloc(buf_len);
-        if (httpd_req_get_hdr_value_str(req, "Test-Header-1", buf, buf_len) == ESP_OK) {
-            ESP_LOGI(TAG, "Found header => Test-Header-1: %s", buf);
-        }
-        free(buf);
-    }
-
-    /* Read URL query string length and allocate memory for length + 1,
-     * extra byte for null termination */
-    buf_len = httpd_req_get_url_query_len(req) + 1;
-    if (buf_len > 1) {
-        buf = malloc(buf_len);
-        if (httpd_req_get_url_query_str(req, buf, buf_len) == ESP_OK) {
-            ESP_LOGI(TAG, "Found URL query => %s", buf);
-            char param[32];
-            /* Get value of expected key from query string */
-            if (httpd_query_key_value(buf, "query1", param, sizeof(param)) == ESP_OK) {
-                ESP_LOGI(TAG, "Found URL query parameter => query1=%s", param);
-            }
-            if (httpd_query_key_value(buf, "query3", param, sizeof(param)) == ESP_OK) {
-                ESP_LOGI(TAG, "Found URL query parameter => query3=%s", param);
-            }
-            if (httpd_query_key_value(buf, "query2", param, sizeof(param)) == ESP_OK) {
-                ESP_LOGI(TAG, "Found URL query parameter => query2=%s", param);
-            }
-        }
-        free(buf);
-    }
-
+static esp_err_t main_page_handler(httpd_req_t *req) {
     /* Set some custom headers */
-    httpd_resp_set_hdr(req, "Custom-Header-1", "Custom-Value-1");
-    httpd_resp_set_hdr(req, "Custom-Header-2", "Custom-Value-2");
+    httpd_resp_set_hdr(req, "Custom-Header-1", "avatarsd");
+    httpd_resp_set_hdr(req, "Custom-Header-2", "by S.D.");
 
-    /* Send response with custom headers and body set as the
-     * string passed in user context*/
-    const char *resp_str = (const char *)req->user_ctx;
+    /** @brief Send response with custom headers and body set as the
+     * string passed in user context
+     * @todo add locks */
+    boiler_t boiler_ctx_copy;
+    memcpy(&boiler_ctx_copy, req->user_ctx, sizeof(boiler_t));
+
+    char resp_str[256] = {0};
+    snprintf(resp_str, sizeof(resp_str),
+             "Worker0 IN: %03.2f`C, OUT: %03.2f`C, Flow: %lu\t\t\t"
+             "Coolant IN: %03.2f`C, OUT: %03.2f`C, Flow: %lu\t\t\t"
+             "Boiler  IN: %03.2f`C, OUT: %03.2f`C, Flow: %lu\t\t\t",
+             boiler_ctx_copy.workers[0].termal.temp[DIR_IN].temp,
+             boiler_ctx_copy.workers[0].termal.temp[DIR_OUT].temp,
+             boiler_ctx_copy.workers[0].termal.flow.flow, boiler_ctx_copy.colant.temp[DIR_IN].temp,
+             boiler_ctx_copy.colant.temp[DIR_OUT].temp, boiler_ctx_copy.colant.flow.flow,
+             boiler_ctx_copy.boiler.temp[DIR_IN].temp, boiler_ctx_copy.boiler.temp[DIR_OUT].temp,
+             boiler_ctx_copy.boiler.flow.flow);
     httpd_resp_send(req, resp_str, HTTPD_RESP_USE_STRLEN);
 
     /* After sending the HTTP response the old HTTP request
      * headers are lost. Check if HTTP request headers can be read now. */
     if (httpd_req_get_hdr_value_len(req, "Host") == 0) {
-        ESP_LOGI(TAG, "Request headers lost");
+        ESP_LOGI(__func__, "Request headers lost");
     }
     return ESP_OK;
 }
 
-static const httpd_uri_t hello = {.uri = "/hello",
-                                  .method = HTTP_GET,
-                                  .handler = hello_get_handler,
-                                  /* Let's pass response string in user
-                                   * context to demonstrate it's usage */
-                                  .user_ctx = "Hello World!"};
-
-/* An HTTP POST handler */
-static esp_err_t echo_post_handler(httpd_req_t *req) {
-    char buf[100];
-    int ret, remaining = req->content_len;
-
-    while (remaining > 0) {
-        /* Read the data for the request */
-        if ((ret = httpd_req_recv(req, buf, MIN(remaining, sizeof(buf)))) <= 0) {
-            if (ret == HTTPD_SOCK_ERR_TIMEOUT) {
-                /* Retry receiving if timeout occurred */
-                continue;
-            }
-            return ESP_FAIL;
-        }
-
-        /* Send back the same data */
-        httpd_resp_send_chunk(req, buf, ret);
-        remaining -= ret;
-
-        /* Log data received */
-        ESP_LOGI(TAG, "=========== RECEIVED DATA ==========");
-        ESP_LOGI(TAG, "%.*s", ret, buf);
-        ESP_LOGI(TAG, "====================================");
-    }
-
-    // End response
-    httpd_resp_send_chunk(req, NULL, 0);
-    return ESP_OK;
-}
-
-static const httpd_uri_t echo = {
-    .uri = "/echo", .method = HTTP_POST, .handler = echo_post_handler, .user_ctx = NULL};
-
-/* This handler allows the custom error handling functionality to be
- * tested from client side. For that, when a PUT request 0 is sent to
- * URI /ctrl, the /hello and /echo URIs are unregistered and following
- * custom error handler http_404_error_handler() is registered.
- * Afterwards, when /hello or /echo is requested, this custom error
- * handler is invoked which, after sending an error message to client,
- * either closes the underlying socket (when requested URI is /echo)
- * or keeps it open (when requested URI is /hello). This allows the
- * client to infer if the custom error handler is functioning as expected
- * by observing the socket state.
- */
 esp_err_t http_404_error_handler(httpd_req_t *req, httpd_err_code_t err) {
-    if (strcmp("/hello", req->uri) == 0) {
-        httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "/hello URI is not available");
-        /* Return ESP_OK to keep underlying socket open */
-        return ESP_OK;
-    } else if (strcmp("/echo", req->uri) == 0) {
-        httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "/echo URI is not available");
-        /* Return ESP_FAIL to close underlying socket */
-        return ESP_FAIL;
-    }
     /* For any other URI send 404 and close socket */
-    httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "Some 404 error message");
+    httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "Some 404");
     return ESP_FAIL;
 }
 
-/* An HTTP PUT handler. This demonstrates realtime
- * registration and deregistration of URI handlers
- */
-static esp_err_t ctrl_put_handler(httpd_req_t *req) {
-    char buf;
-    int ret;
+static httpd_uri_t hello = {.uri = "/",
+                            .method = HTTP_GET,
+                            .handler = main_page_handler,
 
-    if ((ret = httpd_req_recv(req, &buf, 1)) <= 0) {
-        if (ret == HTTPD_SOCK_ERR_TIMEOUT) {
-            httpd_resp_send_408(req);
-        }
-        return ESP_FAIL;
-    }
+                            .user_ctx = NULL};
 
-    if (buf == '0') {
-        /* URI handlers can be unregistered using the uri string */
-        ESP_LOGI(TAG, "Unregistering /hello and /echo URIs");
-        httpd_unregister_uri(req->handle, "/hello");
-        httpd_unregister_uri(req->handle, "/echo");
-        /* Register the custom error handler */
-        httpd_register_err_handler(req->handle, HTTPD_404_NOT_FOUND, http_404_error_handler);
-    } else {
-        ESP_LOGI(TAG, "Registering /hello and /echo URIs");
-        httpd_register_uri_handler(req->handle, &hello);
-        httpd_register_uri_handler(req->handle, &echo);
-        /* Unregister custom error handler */
-        httpd_register_err_handler(req->handle, HTTPD_404_NOT_FOUND, NULL);
-    }
-
-    /* Respond with empty body */
-    httpd_resp_send(req, NULL, 0);
-    return ESP_OK;
-}
-
-static const httpd_uri_t ctrl = {
-    .uri = "/ctrl", .method = HTTP_PUT, .handler = ctrl_put_handler, .user_ctx = NULL};
-
-static httpd_handle_t start_webserver(void) {
+static httpd_handle_t start_webserver(boiler_t *boiler_ctx) {
     httpd_handle_t server = NULL;
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.lru_purge_enable = true;
+    hello.user_ctx = boiler_ctx;
 
     // Start the httpd server
-    ESP_LOGI(TAG, "Starting server on port: '%d'", config.server_port);
+    ESP_LOGI(__func__, "Starting server on port: '%d'", config.server_port);
     if (httpd_start(&server, &config) == ESP_OK) {
         // Set URI handlers
-        ESP_LOGI(TAG, "Registering URI handlers");
+        ESP_LOGI(__func__, "Registering URI handlers");
         httpd_register_uri_handler(server, &hello);
-        httpd_register_uri_handler(server, &echo);
-        httpd_register_uri_handler(server, &ctrl);
-#if CONFIG_EXAMPLE_BASIC_AUTH
-        httpd_register_basic_auth(server);
-#endif
+        httpd_register_err_handler(server, HTTPD_404_NOT_FOUND, http_404_error_handler);
+
         return server;
     }
 
-    ESP_LOGI(TAG, "Error starting server!");
+    ESP_LOGI(__func__, "Error starting server!");
     return NULL;
 }
 
@@ -358,23 +100,23 @@ static esp_err_t stop_webserver(httpd_handle_t server) {
 
 static void disconnect_handler(void *arg, esp_event_base_t event_base, int32_t event_id,
                                void *event_data) {
-    httpd_handle_t *server = (httpd_handle_t *)arg;
-    if (*server) {
-        ESP_LOGI(TAG, "Stopping webserver");
-        if (stop_webserver(*server) == ESP_OK) {
-            *server = NULL;
+    boiler_t *server = (boiler_t *)arg;
+    if (server->server) {
+        ESP_LOGI(__func__, "Stopping webserver");
+        if (stop_webserver(server->server) == ESP_OK) {
+            server->server = NULL;
         } else {
-            ESP_LOGE(TAG, "Failed to stop http server");
+            ESP_LOGE(__func__, "Failed to stop http server");
         }
     }
 }
 
 static void connect_handler(void *arg, esp_event_base_t event_base, int32_t event_id,
                             void *event_data) {
-    httpd_handle_t *server = (httpd_handle_t *)arg;
-    if (*server == NULL) {
-        ESP_LOGI(TAG, "Starting webserver");
-        *server = start_webserver();
+    boiler_t *server = (boiler_t *)arg;
+    if (server->server == NULL) {
+        ESP_LOGI(__func__, "Starting webserver");
+        server->server = start_webserver(server);
     }
 }
 
@@ -385,18 +127,19 @@ static void connect_handler(void *arg, esp_event_base_t event_base, int32_t even
 /**
  *  @brief read and display sensors data
  */
-void read_and_draw_sensors(hw_ow_t *hw_ow, rom_t *sensors_rom_arr, uint8_t rom_arr_max_count,
+void read_and_draw_sensors(hw_ow_t *hw_ow, temp_sensor_t *sensors_arr, uint8_t sensors_arr_count,
                            ssd1306_handle_t *display, uint8_t draw_y_offset) {
     if (!display) {
         ESP_LOGE(__func__, "no display");
         return;
     }
 
-    int sensors = ow_temp_search_all_temp_sensors(hw_ow, sensors_rom_arr, rom_arr_max_count);
+    /** @todo remove along with scan/read splitting */
+    static rom_t sensors_rom_arr[POINT_MAX];
+    int sensors = ow_temp_search_all_temp_sensors(hw_ow, sensors_rom_arr, POINT_MAX);
     if (!sensors) {
         ESP_LOGW(__func__, "Zero sensors founded, continue");
-        ssd1306_draw_string(display, 0, draw_y_offset, (const uint8_t *)"Zero sensors founded", 16,
-                            1);
+        ssd1306_draw_string(display, 0, draw_y_offset, (const uint8_t *)"   =( no sensors", 16, 1);
 
         /** @todo remove later */
         vTaskDelay(1000 / portTICK_PERIOD_MS);
@@ -404,16 +147,21 @@ void read_and_draw_sensors(hw_ow_t *hw_ow, rom_t *sensors_rom_arr, uint8_t rom_a
     }
     ESP_LOGD(__func__, "Sensors count: %i", sensors);
 
-    char data_str[24] = {0};
-    for (uint8_t i = 0; i < sensors; i++) {
-        if (rom_is_null(&sensors_rom_arr[i])) continue;
-
-        float temp = 0;
+    for (uint8_t i = 0; i < sensors_arr_count; i++) {
+        char data_str[24] = "---";
+        if (rom_is_null(&sensors_rom_arr[i]) || i >= sensors) {
+            rom_zeroing(&sensors_arr[i].rom);
+            sensors_arr->temp = -127;
+            ssd1306_draw_string(display, 0, draw_y_offset + 16 * i, (const uint8_t *)data_str, 16,
+                                1);
+            continue;
+        }
+        sensors_arr[i].rom.raw = sensors_rom_arr[i].raw;
         char *rom_name = (char *)rom_to_string(&sensors_rom_arr[i]);
         rom_name[6] = '\0';  // cut rom
         for (uint8_t n = 0; n < 3; n++) {
-            if (ow_temp_read_sensor(hw_ow, &sensors_rom_arr[i], &temp)) {
-                snprintf(data_str, sizeof(data_str), "%s: %03.2f`C", rom_name, temp);
+            if (ow_temp_read_sensor(hw_ow, &sensors_arr[i].rom, &sensors_arr[i].temp)) {
+                snprintf(data_str, sizeof(data_str), "%s: %03.2f`C", rom_name, sensors_arr[i].temp);
                 ESP_LOGI(__func__, "%s", data_str);
                 break;
             } else if (n == 3 - 1) {
@@ -432,6 +180,10 @@ void read_and_draw_sensors(hw_ow_t *hw_ow, rom_t *sensors_rom_arr, uint8_t rom_a
 void hlt_mon_task(void *ctx) {
     for (;;) {
         /* init */
+        if (!ctx) {
+            ESP_LOGW(__func__, "ctx error");
+            continue;
+        }
         vTaskDelay(500 / portTICK_PERIOD_MS);
 
         /* alloc new hardware 1-wire */
@@ -493,18 +245,11 @@ void hlt_mon_task(void *ctx) {
          * @brief main loop cycle counter
          * @todo create common struct
          */
-        int cntr = 0;
+        boiler_t *boiler = (boiler_t *)ctx;
 
         /* loop */
         for (;;) {
-            /**
-             * @brief common context
-             * @todo create common struct
-             */
-            const uint8_t buff_sz = 16;
-            rom_t buff[buff_sz];
-            memset(buff, 0, sizeof(buff));
-
+            /* display buf */
             char data_str[64] = {0};
 
             /**
@@ -517,111 +262,119 @@ void hlt_mon_task(void *ctx) {
 
             /* draw worker in temp */
             ssd1306_clear_screen(ssd1306_dev, 0x00);
-            sprintf(data_str, "%3u: WRK0 I(1/7)", cntr);
+            sprintf(data_str, "%3llu: WRK0 I(1/7)", boiler->cycles);
             ssd1306_draw_string(ssd1306_dev, 0, 0, (const uint8_t *)data_str, 16, 1);
             /* read and draw sensors*/
             gpio_set_level(GPIO_TEMP_WRK0_IN, 1);
-            read_and_draw_sensors(hw_ow, buff, buff_sz, ssd1306_dev, 16);
+            read_and_draw_sensors(hw_ow, &boiler->workers[0].termal.temp[DIR_IN], 1, ssd1306_dev,
+                                  16);
             gpio_set_level(GPIO_TEMP_WRK0_IN, 0);
             /* draw out last frame */
             int ret = ssd1306_refresh_gram(ssd1306_dev);
             if (ret) {
-                ESP_LOGI(__func__, "Count: %i, gram ret: %i", cntr, ret);
+                ESP_LOGI(__func__, "Count: %llu, gram ret: %i", boiler->cycles, ret);
                 break;
             }
 
             /* draw worker out temp */
             ssd1306_clear_screen(ssd1306_dev, 0x00);
-            sprintf(data_str, "%3u: WRK0 O(2/7)", cntr);
+            sprintf(data_str, "%3llu: WRK0 O(2/7)", boiler->cycles);
             ssd1306_draw_string(ssd1306_dev, 0, 0, (const uint8_t *)data_str, 16, 1);
             /* read and draw sensors*/
             gpio_set_level(GPIO_TEMP_WRK0_OUT, 1);
-            read_and_draw_sensors(hw_ow, buff, buff_sz, ssd1306_dev, 16);
+            read_and_draw_sensors(hw_ow, &boiler->workers[0].termal.temp[DIR_OUT], 1, ssd1306_dev,
+                                  16);
             gpio_set_level(GPIO_TEMP_WRK0_OUT, 0);
             /* draw out last frame */
             ret = ssd1306_refresh_gram(ssd1306_dev);
             if (ret) {
-                ESP_LOGI(__func__, "Count: %i, gram ret: %i", cntr, ret);
+                ESP_LOGI(__func__, "Count: %llu, gram ret: %i", boiler->cycles, ret);
                 break;
             }
 
             /* draw coolant in temp */
             ssd1306_clear_screen(ssd1306_dev, 0x00);
-            sprintf(data_str, "%3u: CLNT I(3/7)", cntr);
+            sprintf(data_str, "%3llu: CLNT I(3/7)", boiler->cycles);
             ssd1306_draw_string(ssd1306_dev, 0, 0, (const uint8_t *)data_str, 16, 1);
             /* read and draw sensors*/
             gpio_set_level(GPIO_TEMP_CLNT_IN, 1);
-            read_and_draw_sensors(hw_ow, buff, buff_sz, ssd1306_dev, 16);
+            read_and_draw_sensors(hw_ow, &boiler->colant.temp[DIR_IN], 1, ssd1306_dev, 16);
             gpio_set_level(GPIO_TEMP_CLNT_IN, 0);
             /* draw out last frame */
             ret = ssd1306_refresh_gram(ssd1306_dev);
             if (ret) {
-                ESP_LOGI(__func__, "Count: %i, gram ret: %i", cntr, ret);
+                ESP_LOGI(__func__, "Count: %llu, gram ret: %i", boiler->cycles, ret);
                 break;
             }
 
             /* draw coolant out temp */
             ssd1306_clear_screen(ssd1306_dev, 0x00);
-            sprintf(data_str, "%3u: CLNT O(4/7)", cntr);
+            sprintf(data_str, "%3llu: CLNT O(4/7)", boiler->cycles);
             ssd1306_draw_string(ssd1306_dev, 0, 0, (const uint8_t *)data_str, 16, 1);
             /* read and draw sensors*/
             gpio_set_level(GPIO_TEMP_CLNT_OUT, 1);
-            read_and_draw_sensors(hw_ow, buff, buff_sz, ssd1306_dev, 16);
+            read_and_draw_sensors(hw_ow, &boiler->colant.temp[DIR_OUT], 1, ssd1306_dev, 16);
             gpio_set_level(GPIO_TEMP_CLNT_OUT, 0);
             /* draw out last frame */
             ret = ssd1306_refresh_gram(ssd1306_dev);
             if (ret) {
-                ESP_LOGI(__func__, "Count: %i, gram ret: %i", cntr, ret);
+                ESP_LOGI(__func__, "Count: %llu, gram ret: %i", boiler->cycles, ret);
                 break;
             }
 
             /* draw boiler both sensors temp */
             ssd1306_clear_screen(ssd1306_dev, 0x00);
-            sprintf(data_str, "%3u: BOILER(5/7)", cntr);
+            sprintf(data_str, "%3llu: BOILER(5/7)", boiler->cycles);
             ssd1306_draw_string(ssd1306_dev, 0, 0, (const uint8_t *)data_str, 16, 1);
             /* read and draw sensors*/
             gpio_set_level(GPIO_TEMP_BOIL_BOTH, 1);
-            read_and_draw_sensors(hw_ow, buff, buff_sz, ssd1306_dev, 16);
+            read_and_draw_sensors(hw_ow, boiler->boiler.temp,
+                                  sizeof(boiler->boiler.temp) / sizeof(temp_sensor_t), ssd1306_dev,
+                                  16);
             gpio_set_level(GPIO_TEMP_BOIL_BOTH, 0);
             /* draw out last frame */
             ret = ssd1306_refresh_gram(ssd1306_dev);
             if (ret) {
-                ESP_LOGI(__func__, "Count: %i, gram ret: %i", cntr, ret);
+                ESP_LOGI(__func__, "Count: %llu, gram ret: %i", boiler->cycles, ret);
                 break;
             }
             /* draw coler temp */
             ssd1306_clear_screen(ssd1306_dev, 0x00);
-            sprintf(data_str, "%3u: COOLER(6/7)", cntr);
+            sprintf(data_str, "%3llu: COOLER(6/7)", boiler->cycles);
             ssd1306_draw_string(ssd1306_dev, 0, 0, (const uint8_t *)data_str, 16, 1);
             /* read and draw sensors*/
             gpio_set_level(GPIO_TEMP_COLER, 1);
-            read_and_draw_sensors(hw_ow, buff, buff_sz, ssd1306_dev, 16);
+            read_and_draw_sensors(hw_ow, boiler->cooler_temps,
+                                  sizeof(boiler->cooler_temps) / sizeof(temp_sensor_t), ssd1306_dev,
+                                  16);
             gpio_set_level(GPIO_TEMP_COLER, 0);
             /* draw out last frame */
             ret = ssd1306_refresh_gram(ssd1306_dev);
             if (ret) {
-                ESP_LOGI(__func__, "Count: %i, gram ret: %i", cntr, ret);
+                ESP_LOGI(__func__, "Count: %llu, gram ret: %i", boiler->cycles, ret);
                 break;
             }
             /* draw aux temp */
             ssd1306_clear_screen(ssd1306_dev, 0x00);
-            sprintf(data_str, "%3u: AUX   (7/7)", cntr);
+            sprintf(data_str, "%3llu: AUX0  (7/7)", boiler->cycles);
             ssd1306_draw_string(ssd1306_dev, 0, 0, (const uint8_t *)data_str, 16, 1);
             /* read and draw sensors*/
             gpio_set_level(GPIO_TEMP_AUX0, 1);
-            read_and_draw_sensors(hw_ow, buff, buff_sz, ssd1306_dev, 16);
+            read_and_draw_sensors(hw_ow, boiler->aux_temps,
+                                  sizeof(boiler->aux_temps) / sizeof(temp_sensor_t), ssd1306_dev,
+                                  16);
             gpio_set_level(GPIO_TEMP_AUX0, 0);
             /* draw out last frame */
             ret = ssd1306_refresh_gram(ssd1306_dev);
             if (ret) {
-                ESP_LOGI(__func__, "Count: %i, gram ret: %i", cntr, ret);
+                ESP_LOGI(__func__, "Count: %llu, gram ret: %i", boiler->cycles, ret);
                 break;
             }
 
-            ++cntr;
+            ++boiler->cycles;
         }
 
-        ESP_LOGE(__func__, "Main loop exit, restarting...");
+        ESP_LOGE(__func__, "Main loop exit, restarting(%llu times)...", ++boiler->loop_err);
 
         ssd1306_delete(ssd1306_dev);
         hw_ow_delete(hw_ow);
@@ -629,7 +382,7 @@ void hlt_mon_task(void *ctx) {
 }
 
 void app_main(void) {
-    static httpd_handle_t server = NULL;
+    static boiler_t boiler = {0};
 
     ESP_ERROR_CHECK(nvs_flash_init());
     ESP_ERROR_CHECK(esp_netif_init());
@@ -641,29 +394,19 @@ void app_main(void) {
      */
     ESP_ERROR_CHECK(example_connect());
 
-    /* Register event handlers to stop the server when Wi-Fi or Ethernet is disconnected,
+    /* Register event handlers to stop the server when Wi-Fi is disconnected,
      * and re-start it upon connection.
      */
-#ifdef CONFIG_EXAMPLE_CONNECT_WIFI
     ESP_ERROR_CHECK(
-        esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &connect_handler, &server));
+        esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &connect_handler, &boiler));
     ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_DISCONNECTED,
-                                               &disconnect_handler, &server));
-#endif  // CONFIG_EXAMPLE_CONNECT_WIFI
-#ifdef CONFIG_EXAMPLE_CONNECT_ETHERNET
-    ESP_ERROR_CHECK(
-        esp_event_handler_register(IP_EVENT, IP_EVENT_ETH_GOT_IP, &connect_handler, &server));
-    ESP_ERROR_CHECK(esp_event_handler_register(ETH_EVENT, ETHERNET_EVENT_DISCONNECTED,
-                                               &disconnect_handler, &server));
-#endif  // CONFIG_EXAMPLE_CONNECT_ETHERNET
+                                               &disconnect_handler, &boiler));
 
     /* Start the server for the first time */
-    server = start_webserver();
+    boiler.server = start_webserver(&boiler);
 
     /* run health monitor */
     TaskHandle_t hlt_mon_handler = NULL;
-    BaseType_t hlth_mon_ret = xTaskCreate(hlt_mon_task, "heaalth monitor", 4096, server,
-                                          tskIDLE_PRIORITY + 5, &hlt_mon_handler);
-
-    (void)hlth_mon_ret;
+    xTaskCreate(hlt_mon_task, "heaalth monitor", 4096, &boiler, tskIDLE_PRIORITY + 5,
+                &hlt_mon_handler);
 }
