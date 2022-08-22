@@ -16,6 +16,7 @@
 #include <nvs_flash.h>
 #include <sys/param.h>
 
+#include "bdc_motor.h"
 #include "boiler.h"
 #include "esp_netif.h"
 #include "esp_tls_crypto.h"
@@ -247,6 +248,13 @@ void hlt_mon_task(void *ctx) {
          */
         boiler_t *boiler = (boiler_t *)ctx;
 
+        bdc_motor_set_speed(boiler->cooler_motor, 100);
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
+        bdc_motor_set_speed(boiler->cooler_motor, 0);
+        bdc_motor_set_speed(boiler->cooler_motor, 2000);
+        vTaskDelay(100 / portTICK_PERIOD_MS);
+        bdc_motor_set_speed(boiler->cooler_motor, 0);
+
         /* loop */
         for (;;) {
             /* display buf */
@@ -371,6 +379,14 @@ void hlt_mon_task(void *ctx) {
                 break;
             }
 
+            /* calc io */
+            if (boiler->colant.temp[DIR_IN].temp > 30) {
+                float temp = boiler->colant.temp[DIR_IN].temp - 30;
+                temp *= BDC_MCPWM_DUTY_TICK_MAX; /* multiply by max duty */
+                temp /= 20;                      /* divide by temp range */
+                bdc_motor_set_speed(boiler->cooler_motor, temp);
+            } else
+                bdc_motor_set_speed(boiler->cooler_motor, 0);
             ++boiler->cycles;
         }
 
@@ -402,11 +418,21 @@ void app_main(void) {
     ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_DISCONNECTED,
                                                &disconnect_handler, &boiler));
 
-    /* Start the server for the first time */
-    boiler.server = start_webserver(&boiler);
+    ESP_LOGI(__func__, "Create DC motor");
+    bdc_motor_config_t motor_config = {.pwm_freq_hz = BDC_MCPWM_FREQ_HZ,
+                                       .pwma_gpio_num = GPIO_CTRL_COOLER,
+                                       .pwmb_gpio_num = GPIO_CTRL_COOLER};
+    bdc_motor_mcpwm_config_t mcpwm_config = {
+        .group_id = 0,
+        .resolution_hz = BDC_MCPWM_TIMER_RESOLUTION_HZ,
+    };
+    ESP_ERROR_CHECK(bdc_motor_new_mcpwm_device(&motor_config, &mcpwm_config, &boiler.cooler_motor));
 
     /* run health monitor */
     TaskHandle_t hlt_mon_handler = NULL;
     xTaskCreate(hlt_mon_task, "heaalth monitor", 4096, &boiler, tskIDLE_PRIORITY + 5,
                 &hlt_mon_handler);
+
+    /* Start the server for the first time */
+    boiler.server = start_webserver(&boiler);
 }

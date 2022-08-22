@@ -1,4 +1,10 @@
 dependencies:
+  espressif/bdc_motor:
+    component_hash: 9292b605cfd390ff62225caa93e02700b86377e6a3156620192e4876dcf87b27
+    source:
+      service_url: https://api.components.espressif.com/
+      type: service
+    version: 0.1.0
   espressif/ssd1306:
     component_hash: 1a5671f8fca1688e284d247c3f772151d356c6194f47976b96a03c39bb81b106
     source:
@@ -10,6 +16,6 @@ dependencies:
     source:
       type: idf
     version: 5.1.0
-manifest_hash: dafef50cf3ef35cdbcffe6f155c3ba5feb88b7630fc9e0097d09392abfb9ff76
+manifest_hash: 60ddca352d696021cbd6d40512057d551d5b67172f0979c693f54bd5d65f868b
 target: esp32
 version: 1.0.0

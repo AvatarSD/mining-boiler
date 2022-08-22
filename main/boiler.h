@@ -1,8 +1,9 @@
-#ifndef BOILER_H
-#define BOILER_H
+#ifndef BOILER_HXX_
+#define BOILER_HXX_
 
 #include <inttypes.h>
 
+#include "driver/pulse_cnt.h"
 #include "hw_ow.h"
 
 typedef struct sensor {
@@ -11,9 +12,9 @@ typedef struct sensor {
 } temp_sensor_t;
 
 typedef struct flow {
-    uint32_t ppl;    /**< pulse per liter */
-    uint32_t flow;   /**< calculeted flow*/
-    uint64_t pulses; /**< pulse per liter */
+    uint32_t ppl;           /**< pulse per liter */
+    uint32_t flow;          /**< calculeted flow*/
+    pcnt_unit_handle_t pcn; /**< handler */
 } flow_t;
 
 enum sensors_dir_e {
@@ -47,6 +48,7 @@ typedef struct worker {
 typedef struct boiler {
     /* components */
     void* server;
+    bdc_motor_handle_t cooler_motor;
 
     /* generic counters */
     uint64_t cycles;

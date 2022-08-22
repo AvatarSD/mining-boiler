@@ -38,6 +38,7 @@
 #define GPIO_CTRL_PUMP_SEC 18
 #define GPIO_CTRL_FAN0 23
 #define GPIO_CTRL_FAN1 22
+#define GPIO_CTRL_COOLER 4
 
 /* GPIO interfaces */
 #define GPIO_MASTER_SCL 26 /*!< gpio number for I2C master clock */
@@ -51,6 +52,11 @@
 /* Periferial config */
 #define I2C_MASTER_NUM I2C_NUM_1  /*!< I2C port number for master dev */
 #define I2C_MASTER_FREQ_HZ 100000 /*!< I2C master clock frequency */
+
 #define UART_HW_OW_NUM CONFIG_DS2480_UART_NUM
+
+#define BDC_MCPWM_TIMER_RESOLUTION_HZ 1000000 // 0.10MHz, 1 tick = 0.1us
+#define BDC_MCPWM_FREQ_HZ             250    // 0.25KHz PWM
+#define BDC_MCPWM_DUTY_TICK_MAX       (BDC_MCPWM_TIMER_RESOLUTION_HZ / BDC_MCPWM_FREQ_HZ) // maximum value we can set for the duty cycle, in ticks
 
 #endif
