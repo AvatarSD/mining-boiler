@@ -251,10 +251,11 @@ void hlt_mon_task(void *ctx) {
         boiler_t *boiler = (boiler_t *)ctx;
 
         /* fan startup test */
-        bdc_motor_set_speed(boiler->cooler_motor, 100);
+        bdc_motor_enable(boiler->cooler_motor);
+        bdc_motor_set_speed(boiler->cooler_motor, 10);
         vTaskDelay(1000 / portTICK_PERIOD_MS);
         bdc_motor_set_speed(boiler->cooler_motor, 0);
-        bdc_motor_set_speed(boiler->cooler_motor, 2000);
+        bdc_motor_set_speed(boiler->cooler_motor, 200);
         vTaskDelay(100 / portTICK_PERIOD_MS);
         bdc_motor_set_speed(boiler->cooler_motor, 0);
 
@@ -423,7 +424,7 @@ void hlt_mon_task(void *ctx) {
         ESP_LOGE(__func__, "Main loop exit, restarting(%llu times)...", ++boiler->loop_err);
         gpio_set_level(GPIO_CTRL_PUMP_PRI, 0);
         gpio_set_level(GPIO_CTRL_PUMP_SEC, 0);
-
+        bdc_motor_disable(boiler->cooler_motor);
         ssd1306_delete(ssd1306_dev);
         hw_ow_delete(hw_ow);
     }

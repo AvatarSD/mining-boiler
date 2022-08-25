@@ -19,10 +19,10 @@
 #define GPIO_TEMP_WRK1_OUT -1
 #define GPIO_TEMP_WRK2_IN -1
 #define GPIO_TEMP_WRK2_OUT -1
-#define GPIO_TEMP_CLNT_IN 13
-#define GPIO_TEMP_CLNT_OUT 12
-#define GPIO_TEMP_BOIL_BOTH 14
-#define GPIO_TEMP_COLER 5
+#define GPIO_TEMP_CLNT_IN 13   /**< MTCK, pull down */
+#define GPIO_TEMP_CLNT_OUT 12  /**< MTDI, pull down */
+#define GPIO_TEMP_BOIL_BOTH 14 /**< MTMS, pull up */
+#define GPIO_TEMP_COLER 5      /**< pull-up */
 #define GPIO_TEMP_AUX0 2
 #define GPIO_TEMP_AUX1 -1
 #define GPIO_TEMP_AUX2 -1
@@ -38,13 +38,13 @@
 #define GPIO_CTRL_PUMP_SEC 18
 #define GPIO_CTRL_FAN0 23
 #define GPIO_CTRL_FAN1 22
-#define GPIO_CTRL_COOLER 4
+#define GPIO_CTRL_COOLER 4 /**< pull-down */
 
 /* GPIO interfaces */
-#define GPIO_MASTER_SCL 26 /*!< gpio number for I2C master clock */
-#define GPIO_MASTER_SDA 27 /*!< gpio number for I2C master data  */
-#define GPIO_PM_TX 0
-#define GPIO_PM_RX 15
+#define GPIO_MASTER_SCL 26 /**< gpio number for I2C master clock */
+#define GPIO_MASTER_SDA 27 /**< gpio number for I2C master data  */
+#define GPIO_PM_TX 0       /**< bootstrap, pull-up */
+#define GPIO_PM_RX 15      /**< MTDO, pull up */
 #define GPIO_HW_OW_TX CONFIG_DS2480_UART_TXD
 #define GPIO_HW_OW_RX CONFIG_DS2480_UART_RXD
 #define GPIO_HW_OW_EN CONFIG_DS2480_ENABLE
@@ -55,8 +55,9 @@
 
 #define UART_HW_OW_NUM CONFIG_DS2480_UART_NUM
 
-#define BDC_MCPWM_TIMER_RESOLUTION_HZ 1000000 // 0.10MHz, 1 tick = 0.1us
-#define BDC_MCPWM_FREQ_HZ             250    // 0.25KHz PWM
-#define BDC_MCPWM_DUTY_TICK_MAX       (BDC_MCPWM_TIMER_RESOLUTION_HZ / BDC_MCPWM_FREQ_HZ) // maximum value we can set for the duty cycle, in ticks
+#define BDC_MCPWM_TIMER_RESOLUTION_HZ 10000000 /**< 10MHz, 1 tick = 0.1us */
+#define BDC_MCPWM_FREQ_HZ 20000                /**< 20KHz PWM */
+#define BDC_MCPWM_DUTY_TICK_MAX \
+    (BDC_MCPWM_TIMER_RESOLUTION_HZ / BDC_MCPWM_FREQ_HZ) /**< 5 tics is 1% */
 
 #endif
