@@ -223,11 +223,11 @@ void hlt_mon_task(void *ctx) {
         // GPIO_CNT_WRK0 32
 
         /* i/o gpio init */
-        uint32_t out_pins_sel =
-            ((1ul << GPIO_TEMP_WRK0_IN) | (1ul << GPIO_TEMP_WRK0_OUT) | (1ul << GPIO_TEMP_CLNT_IN) |
-             (1ul << GPIO_TEMP_CLNT_OUT) | (1ul << GPIO_TEMP_BOIL_BOTH) | (1ul << GPIO_TEMP_COLER) |
-             (1ul << GPIO_TEMP_AUX0) | (1ul << GPIO_CTRL_WRK0) | (1ul << GPIO_CTRL_PUMP_PRI) |
-             (1ul << GPIO_CTRL_PUMP_SEC) | (1ul << GPIO_CTRL_FAN0) | (1ul << GPIO_CTRL_FAN1));
+        uint64_t out_pins_sel =
+            ((1ull << GPIO_TEMP_WRK0_IN) | (1ull << GPIO_TEMP_WRK0_OUT) | (1ull << GPIO_TEMP_CLNT_IN) |
+             (1ull << GPIO_TEMP_CLNT_OUT) | (1ull << GPIO_TEMP_BOIL_BOTH) | (1ull << GPIO_TEMP_COLER) |
+             (1ull << GPIO_TEMP_AUX0) | (1ull << GPIO_CTRL_WRK0) | (1ull << GPIO_CTRL_PUMP_PRI) |
+             (1ull << GPIO_CTRL_PUMP_SEC) | (1ull << GPIO_CTRL_FAN0) | (1ull << GPIO_CTRL_FAN1));
 
         // zero-initialize the config structure.
         gpio_config_t io_conf = {};
