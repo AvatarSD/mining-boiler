@@ -80,11 +80,6 @@ static esp_err_t main_page_handler(httpd_req_t *req) {
              uptime, uptime / 1000000llu, esp_uptime_str(uptime));
     httpd_resp_send(req, resp_str, HTTPD_RESP_USE_STRLEN);
 
-    /* After sending the HTTP response the old HTTP request
-     * headers are lost. Check if HTTP request headers can be read now. */
-    if (httpd_req_get_hdr_value_len(req, "Host") == 0) {
-        ESP_LOGI(__func__, "Request headers lost");
-    }
     return ESP_OK;
 }
 
@@ -206,7 +201,6 @@ void read_and_draw_sensors(hw_ow_t *hw_ow, temp_sensor_t *sensors_arr, uint8_t s
  *
  */
 void temp_mon_task(void *ctx) {
-    for (;;) {
     /* init */
     if (!ctx) {
         ESP_LOGW(__func__, "ctx error");
@@ -504,6 +498,7 @@ void app_main(void) {
     ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_DISCONNECTED,
                                                &disconnect_handler, &boiler));
 
+    /* bdc motor handle */
     ESP_LOGI(__func__, "Create DC motor");
     bdc_motor_config_t motor_config = {.pwm_freq_hz = BDC_MCPWM_FREQ_HZ,
                                        .pwma_gpio_num = GPIO_CTRL_COOLER,
