@@ -31,6 +31,25 @@
 #include "ssd1306.h"
 
 #define MAIN_PRIO (1)
+
+/**
+ * @brief return uptime string
+ *
+ * @param uptime
+ * @return const char*
+ */
+const char *esp_uptime_str(uint64_t uptime) {
+    static char uptime_str[64];
+
+    snprintf(uptime_str, sizeof(uptime_str), "%llud %lluh %llum %llus",
+             uptime / (1000000llu * 3600llu * 24llu),
+             (uptime % (1000000llu * 3600llu * 24llu)) / (1000000llu * 3600llu),
+             (uptime % (1000000llu * 3600llu)) / (1000000llu * 60llu),
+             (uptime % (1000000llu * 60llu)) / (1000000llu));
+
+    return uptime_str;
+}
+
 /* An HTTP GET handler */
 static esp_err_t main_page_handler(httpd_req_t *req) {
     /* Set some custom headers */
@@ -50,8 +69,7 @@ static esp_err_t main_page_handler(httpd_req_t *req) {
              "Worker0 IN: %03.2f`C, OUT: %03.2f`C, Flow: %lu;\t\t\t"
              "Coolant IN: %03.2f`C, OUT: %03.2f`C, Flow: %lu\t\t\t"
              "Boiler  IN: %03.2f`C, OUT: %03.2f`C, Flow: %lu\t\t\t"
-             "Fan: %3.2f%%, Worker: %s;\t\t\tCycles: %llu; Uptime: %llius(%llus) or %llud, %lluh, "
-             "%llum, %llus",
+             "Fan: %3.2f%%, Worker: %s;\t\t\tCycles: %llu; Uptime: %llius(%llus) or %s",
              boiler_ctx_copy.workers[0].termal.temp[DIR_IN].temp,
              boiler_ctx_copy.workers[0].termal.temp[DIR_OUT].temp,
              boiler_ctx_copy.workers[0].termal.flow.flow, boiler_ctx_copy.colant.temp[DIR_IN].temp,
@@ -59,10 +77,7 @@ static esp_err_t main_page_handler(httpd_req_t *req) {
              boiler_ctx_copy.boiler.temp[DIR_IN].temp, boiler_ctx_copy.boiler.temp[DIR_OUT].temp,
              boiler_ctx_copy.boiler.flow.flow, boiler_ctx_copy.cooler_motor_pwr * 100,
              boiler_ctx_copy.workers[0].enabled ? "Enabled" : "Disabled", boiler_ctx_copy.cycles,
-             uptime, uptime / 1000000llu, uptime / (1000000llu * 3600llu * 24llu),
-             (uptime % (1000000llu * 3600llu * 24llu)) / (1000000llu * 3600llu),
-             (uptime % (1000000llu * 3600llu)) / (1000000llu * 60llu),
-             (uptime % (1000000llu * 60llu)) / (1000000llu));
+             uptime, uptime / 1000000llu, esp_uptime_str(uptime));
     httpd_resp_send(req, resp_str, HTTPD_RESP_USE_STRLEN);
 
     /* After sending the HTTP response the old HTTP request
@@ -294,12 +309,14 @@ void temp_mon_task(void *ctx) {
 
             /* draw worker in temp */
             ssd1306_clear_screen(ssd1306_dev, 0x00);
-            sprintf(data_str, "%3llu: WRK0 I(1/7)", boiler->cycles);
-            ssd1306_draw_string(ssd1306_dev, 0, 0, (const uint8_t *)data_str, 16, 1);
+            ssd1306_draw_string(ssd1306_dev, 0, 0,
+                                (const uint8_t *)esp_uptime_str(esp_timer_get_time()), 16, 1);
+            sprintf(data_str, "WRK0 I(1/7) %4llu", boiler->cycles % 10000);
+            ssd1306_draw_string(ssd1306_dev, 0, 16, (const uint8_t *)data_str, 16, 1);
             /* read and draw sensors*/
             gpio_set_level(GPIO_TEMP_WRK0_IN, 1);
             read_and_draw_sensors(hw_ow, &boiler->workers[0].termal.temp[DIR_IN], 1, ssd1306_dev,
-                                  16);
+                                  32);
             gpio_set_level(GPIO_TEMP_WRK0_IN, 0);
             /* draw out last frame */
             int ret = ssd1306_refresh_gram(ssd1306_dev);
@@ -310,12 +327,14 @@ void temp_mon_task(void *ctx) {
 
             /* draw worker out temp */
             ssd1306_clear_screen(ssd1306_dev, 0x00);
-            sprintf(data_str, "%3llu: WRK0 O(2/7)", boiler->cycles);
-            ssd1306_draw_string(ssd1306_dev, 0, 0, (const uint8_t *)data_str, 16, 1);
+            ssd1306_draw_string(ssd1306_dev, 0, 0,
+                                (const uint8_t *)esp_uptime_str(esp_timer_get_time()), 16, 1);
+            sprintf(data_str, "WRK0 O(2/7) %4llu", boiler->cycles % 10000);
+            ssd1306_draw_string(ssd1306_dev, 0, 16, (const uint8_t *)data_str, 16, 1);
             /* read and draw sensors*/
             gpio_set_level(GPIO_TEMP_WRK0_OUT, 1);
             read_and_draw_sensors(hw_ow, &boiler->workers[0].termal.temp[DIR_OUT], 1, ssd1306_dev,
-                                  16);
+                                  32);
             gpio_set_level(GPIO_TEMP_WRK0_OUT, 0);
             /* draw out last frame */
             ret = ssd1306_refresh_gram(ssd1306_dev);
@@ -326,11 +345,13 @@ void temp_mon_task(void *ctx) {
 
             /* draw coolant in temp */
             ssd1306_clear_screen(ssd1306_dev, 0x00);
-            sprintf(data_str, "%3llu: CLNT I(3/7)", boiler->cycles);
-            ssd1306_draw_string(ssd1306_dev, 0, 0, (const uint8_t *)data_str, 16, 1);
+            ssd1306_draw_string(ssd1306_dev, 0, 0,
+                                (const uint8_t *)esp_uptime_str(esp_timer_get_time()), 16, 1);
+            sprintf(data_str, "CLNT I(3/7) %4llu", boiler->cycles % 10000);
+            ssd1306_draw_string(ssd1306_dev, 0, 16, (const uint8_t *)data_str, 16, 1);
             /* read and draw sensors*/
             gpio_set_level(GPIO_TEMP_CLNT_IN, 1);
-            read_and_draw_sensors(hw_ow, &boiler->colant.temp[DIR_IN], 1, ssd1306_dev, 16);
+            read_and_draw_sensors(hw_ow, &boiler->colant.temp[DIR_IN], 1, ssd1306_dev, 32);
             gpio_set_level(GPIO_TEMP_CLNT_IN, 0);
             /* draw out last frame */
             ret = ssd1306_refresh_gram(ssd1306_dev);
@@ -341,11 +362,13 @@ void temp_mon_task(void *ctx) {
 
             /* draw coolant out temp */
             ssd1306_clear_screen(ssd1306_dev, 0x00);
-            sprintf(data_str, "%3llu: CLNT O(4/7)", boiler->cycles);
-            ssd1306_draw_string(ssd1306_dev, 0, 0, (const uint8_t *)data_str, 16, 1);
+            ssd1306_draw_string(ssd1306_dev, 0, 0,
+                                (const uint8_t *)esp_uptime_str(esp_timer_get_time()), 16, 1);
+            sprintf(data_str, "CLNT O(4/7) %4llu", boiler->cycles % 10000);
+            ssd1306_draw_string(ssd1306_dev, 0, 16, (const uint8_t *)data_str, 16, 1);
             /* read and draw sensors*/
             gpio_set_level(GPIO_TEMP_CLNT_OUT, 1);
-            read_and_draw_sensors(hw_ow, &boiler->colant.temp[DIR_OUT], 1, ssd1306_dev, 16);
+            read_and_draw_sensors(hw_ow, &boiler->colant.temp[DIR_OUT], 1, ssd1306_dev, 32);
             gpio_set_level(GPIO_TEMP_CLNT_OUT, 0);
             /* draw out last frame */
             ret = ssd1306_refresh_gram(ssd1306_dev);
@@ -356,13 +379,15 @@ void temp_mon_task(void *ctx) {
 
             /* draw boiler both sensors temp */
             ssd1306_clear_screen(ssd1306_dev, 0x00);
-            sprintf(data_str, "%3llu: BOILER(5/7)", boiler->cycles);
-            ssd1306_draw_string(ssd1306_dev, 0, 0, (const uint8_t *)data_str, 16, 1);
+            ssd1306_draw_string(ssd1306_dev, 0, 0,
+                                (const uint8_t *)esp_uptime_str(esp_timer_get_time()), 16, 1);
+            sprintf(data_str, "BOILER(5/7) %4llu", boiler->cycles % 10000);
+            ssd1306_draw_string(ssd1306_dev, 0, 16, (const uint8_t *)data_str, 16, 1);
             /* read and draw sensors*/
             gpio_set_level(GPIO_TEMP_BOIL_BOTH, 1);
             read_and_draw_sensors(hw_ow, boiler->boiler.temp,
                                   sizeof(boiler->boiler.temp) / sizeof(temp_sensor_t), ssd1306_dev,
-                                  16);
+                                  32);
             gpio_set_level(GPIO_TEMP_BOIL_BOTH, 0);
             /* draw out last frame */
             ret = ssd1306_refresh_gram(ssd1306_dev);
@@ -372,13 +397,15 @@ void temp_mon_task(void *ctx) {
             }
             /* draw coler temp */
             ssd1306_clear_screen(ssd1306_dev, 0x00);
-            sprintf(data_str, "%3llu: COOLER(6/7)", boiler->cycles);
-            ssd1306_draw_string(ssd1306_dev, 0, 0, (const uint8_t *)data_str, 16, 1);
+            ssd1306_draw_string(ssd1306_dev, 0, 0,
+                                (const uint8_t *)esp_uptime_str(esp_timer_get_time()), 16, 1);
+            sprintf(data_str, "COOLER(6/7) %4llu", boiler->cycles % 10000);
+            ssd1306_draw_string(ssd1306_dev, 0, 16, (const uint8_t *)data_str, 16, 1);
             /* read and draw sensors*/
             gpio_set_level(GPIO_TEMP_COLER, 1);
             read_and_draw_sensors(hw_ow, boiler->cooler_temps,
                                   sizeof(boiler->cooler_temps) / sizeof(temp_sensor_t), ssd1306_dev,
-                                  16);
+                                  32);
             gpio_set_level(GPIO_TEMP_COLER, 0);
             /* draw out last frame */
             ret = ssd1306_refresh_gram(ssd1306_dev);
@@ -388,13 +415,15 @@ void temp_mon_task(void *ctx) {
             }
             /* draw aux temp */
             ssd1306_clear_screen(ssd1306_dev, 0x00);
-            sprintf(data_str, "%3llu: AUX0  (7/7)", boiler->cycles);
-            ssd1306_draw_string(ssd1306_dev, 0, 0, (const uint8_t *)data_str, 16, 1);
+            ssd1306_draw_string(ssd1306_dev, 0, 0,
+                                (const uint8_t *)esp_uptime_str(esp_timer_get_time()), 16, 1);
+            sprintf(data_str, "AUX0  (7/7) %4llu", boiler->cycles % 10000);
+            ssd1306_draw_string(ssd1306_dev, 0, 16, (const uint8_t *)data_str, 16, 1);
             /* read and draw sensors*/
             gpio_set_level(GPIO_TEMP_AUX0, 1);
             read_and_draw_sensors(hw_ow, boiler->aux_temps,
                                   sizeof(boiler->aux_temps) / sizeof(temp_sensor_t), ssd1306_dev,
-                                  16);
+                                  32);
             gpio_set_level(GPIO_TEMP_AUX0, 0);
             /* draw out last frame */
             ret = ssd1306_refresh_gram(ssd1306_dev);
