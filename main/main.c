@@ -19,6 +19,7 @@
 #include "bdc_motor.h"
 #include "boiler.h"
 #include "esp_netif.h"
+#include "esp_task_wdt.h"
 #include "esp_timer.h"
 #include "esp_tls_crypto.h"
 #include "freertos/FreeRTOS.h"
@@ -29,6 +30,7 @@
 #include "protocol_examples_common.h"
 #include "ssd1306.h"
 
+#define MAIN_PRIO (1)
 /* An HTTP GET handler */
 static esp_err_t main_page_handler(httpd_req_t *req) {
     /* Set some custom headers */
@@ -188,15 +190,16 @@ void read_and_draw_sensors(hw_ow_t *hw_ow, temp_sensor_t *sensors_arr, uint8_t s
  *  @brief main task for health logic
  *
  */
-void hlt_mon_task(void *ctx) {
+void temp_mon_task(void *ctx) {
     for (;;) {
-        /* init */
-        if (!ctx) {
-            ESP_LOGW(__func__, "ctx error");
-            continue;
-        }
-        vTaskDelay(500 / portTICK_PERIOD_MS);
+    /* init */
+    if (!ctx) {
+        ESP_LOGW(__func__, "ctx error");
+        return;
+    }
 
+    ESP_ERROR_CHECK(esp_task_wdt_add(NULL));
+    for (;;) {
         /* alloc new hardware 1-wire */
         hw_ow_t *hw_ow = hw_ow_new(UART_HW_OW_NUM, GPIO_HW_OW_TX, GPIO_HW_OW_RX, GPIO_HW_OW_EN);
         if (!hw_ow) {
@@ -432,6 +435,7 @@ void hlt_mon_task(void *ctx) {
 
             /* cycle */
             ++boiler->cycles;
+            esp_task_wdt_reset();
         }
 
         ESP_LOGE(__func__, "Main loop exit, restarting(%llu times)...", ++boiler->loop_err);
@@ -440,6 +444,8 @@ void hlt_mon_task(void *ctx) {
         bdc_motor_disable(boiler->cooler_motor);
         ssd1306_delete(ssd1306_dev);
         hw_ow_delete(hw_ow);
+
+        vTaskDelay(500 / portTICK_PERIOD_MS);
     }
 }
 
@@ -447,6 +453,11 @@ void app_main(void) {
     static boiler_t boiler = {0};
 
     ESP_ERROR_CHECK(nvs_flash_init());
+
+    /* run health monitor */
+    TaskHandle_t temp_mon_handler = NULL;
+    xTaskCreate(temp_mon_task, "temp_reader", 8192, &boiler, MAIN_PRIO, &temp_mon_handler);
+
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
 
@@ -473,11 +484,6 @@ void app_main(void) {
         .resolution_hz = BDC_MCPWM_TIMER_RESOLUTION_HZ,
     };
     ESP_ERROR_CHECK(bdc_motor_new_mcpwm_device(&motor_config, &mcpwm_config, &boiler.cooler_motor));
-
-    /* run health monitor */
-    TaskHandle_t hlt_mon_handler = NULL;
-    xTaskCreate(hlt_mon_task, "heaalth monitor", 4096, &boiler, tskIDLE_PRIORITY + 5,
-                &hlt_mon_handler);
 
     /* Start the server for the first time */
     boiler.server = start_webserver(&boiler);
