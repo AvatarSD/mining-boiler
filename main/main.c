@@ -19,6 +19,7 @@
 #include "bdc_motor.h"
 #include "boiler.h"
 #include "esp_netif.h"
+#include "esp_timer.h"
 #include "esp_tls_crypto.h"
 #include "freertos/FreeRTOS.h"
 #include "fw_config.h"
@@ -40,19 +41,26 @@ static esp_err_t main_page_handler(httpd_req_t *req) {
     boiler_t boiler_ctx_copy;
     memcpy(&boiler_ctx_copy, req->user_ctx, sizeof(boiler_t));
 
+    // curr is 217bytes
     char resp_str[256] = {0};
+    uint64_t uptime = esp_timer_get_time();
     snprintf(resp_str, sizeof(resp_str),
-             "Worker0 IN: %03.2f`C, OUT: %03.2f`C, Flow: %lu\t\t\t"
+             "Worker0 IN: %03.2f`C, OUT: %03.2f`C, Flow: %lu;\t\t\t"
              "Coolant IN: %03.2f`C, OUT: %03.2f`C, Flow: %lu\t\t\t"
              "Boiler  IN: %03.2f`C, OUT: %03.2f`C, Flow: %lu\t\t\t"
-             "Fan: %3.2f%%, Worker: %s",
+             "Fan: %3.2f%%, Worker: %s;\t\t\tCycles: %llu; Uptime: %llius(%llus) or %llud, %lluh, "
+             "%llum, %llus",
              boiler_ctx_copy.workers[0].termal.temp[DIR_IN].temp,
              boiler_ctx_copy.workers[0].termal.temp[DIR_OUT].temp,
              boiler_ctx_copy.workers[0].termal.flow.flow, boiler_ctx_copy.colant.temp[DIR_IN].temp,
              boiler_ctx_copy.colant.temp[DIR_OUT].temp, boiler_ctx_copy.colant.flow.flow,
              boiler_ctx_copy.boiler.temp[DIR_IN].temp, boiler_ctx_copy.boiler.temp[DIR_OUT].temp,
              boiler_ctx_copy.boiler.flow.flow, boiler_ctx_copy.cooler_motor_pwr * 100,
-             boiler_ctx_copy.workers[0].enabled ? "Enabled" : "Disabled");
+             boiler_ctx_copy.workers[0].enabled ? "Enabled" : "Disabled", boiler_ctx_copy.cycles,
+             uptime, uptime / 1000000llu, uptime / (1000000llu * 3600llu * 24llu),
+             (uptime % (1000000llu * 3600llu * 24llu)) / (1000000llu * 3600llu),
+             (uptime % (1000000llu * 3600llu)) / (1000000llu * 60llu),
+             (uptime % (1000000llu * 60llu)) / (1000000llu));
     httpd_resp_send(req, resp_str, HTTPD_RESP_USE_STRLEN);
 
     /* After sending the HTTP response the old HTTP request
