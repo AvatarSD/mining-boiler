@@ -509,8 +509,8 @@ void temp_mon_task(void *ctx) {
 
             /* calc worker safe zone */
             bool worker_en0 = /*boiler->workers[0].termal.flow.flow > 0.03 &&*/
-                              boiler->workers[0].termal.temp[DIR_IN].temp < 50 &&
-                              boiler->workers[0].termal.temp[DIR_OUT].temp < 60;
+                              boiler->workers[0].termal.temp[DIR_IN].temp < 50.0 &&
+                              boiler->workers[0].termal.temp[DIR_OUT].temp < 60.0;
             if (worker_en0 != boiler->workers[0].enabled) {
                 boiler->workers[0].enabled = worker_en0;
                 ESP_LOGI(__func__, "Worker 0: %s",
