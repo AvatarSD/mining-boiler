@@ -232,11 +232,16 @@ void hlt_mon_task(void *ctx) {
 
         /* i/o gpio init */
         uint64_t out_pins_sel =
-            ((1ull << GPIO_TEMP_WRK0_IN) | (1ull << GPIO_TEMP_WRK0_OUT) | (1ull << GPIO_TEMP_CLNT_IN) |
-             (1ull << GPIO_TEMP_CLNT_OUT) | (1ull << GPIO_TEMP_BOIL_BOTH) | (1ull << GPIO_TEMP_COLER) |
-             (1ull << GPIO_TEMP_AUX0) | (1ull << GPIO_CTRL_WRK0) | (1ull << GPIO_CTRL_PUMP_PRI) |
+            ((1ull << GPIO_TEMP_WRK0_IN) | (1ull << GPIO_TEMP_WRK0_OUT) |
+             (1ull << GPIO_TEMP_CLNT_IN) | (1ull << GPIO_TEMP_CLNT_OUT) |
+             (1ull << GPIO_TEMP_BOIL_BOTH) | (1ull << GPIO_TEMP_COLER) | (1ull << GPIO_TEMP_AUX0) |
+             (1ull << GPIO_CTRL_WRK0) | (1ull << GPIO_CTRL_PUMP_PRI) |
              (1ull << GPIO_CTRL_PUMP_SEC) | (1ull << GPIO_CTRL_FAN0) | (1ull << GPIO_CTRL_FAN1));
 
+#ifdef CONFIG_ESP_DEBUG_STUBS_ENABLE
+        /* free jtag pins */
+        out_pins_sel &= ~((1ull << 12) | (1ull << 13) | (1ull << 14) | (1ull << 14));
+#endif
         // zero-initialize the config structure.
         gpio_config_t io_conf = {};
         // disable interrupt
