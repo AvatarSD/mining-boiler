@@ -60,4 +60,6 @@
 #define BDC_MCPWM_DUTY_TICK_MAX \
     (BDC_MCPWM_TIMER_RESOLUTION_HZ / BDC_MCPWM_FREQ_HZ) /**< 5 tics is 1% */
 
+#define CNT_TIC_L 330
+
 #endif

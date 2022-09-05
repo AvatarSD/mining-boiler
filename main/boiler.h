@@ -13,7 +13,7 @@ typedef struct sensor {
 
 typedef struct flow {
     uint32_t ppl;           /**< pulse per liter */
-    uint32_t flow;          /**< calculeted flow, ml/Min*/
+    float flow;          /**< calculeted flow, liters/sec*/
     pcnt_unit_handle_t pcn; /**< handler */
 } flow_t;
 

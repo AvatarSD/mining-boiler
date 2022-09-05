@@ -13,11 +13,13 @@
 #include <esp_log.h>
 #include <esp_system.h>
 #include <esp_wifi.h>
+#include <freertos/queue.h>
 #include <nvs_flash.h>
 #include <sys/param.h>
 
 #include "bdc_motor.h"
 #include "boiler.h"
+#include "esp32/rom/gpio.h"
 #include "esp_netif.h"
 #include "esp_task_wdt.h"
 #include "esp_timer.h"
@@ -63,12 +65,12 @@ static esp_err_t main_page_handler(httpd_req_t *req) {
     memcpy(&boiler_ctx_copy, req->user_ctx, sizeof(boiler_t));
 
     // curr is 217bytes
-    char resp_str[256] = {0};
+    char resp_str[256+128] = {0};
     uint64_t uptime = esp_timer_get_time();
     snprintf(resp_str, sizeof(resp_str),
-             "Worker0 IN: %03.2f`C, OUT: %03.2f`C, Flow: %lu;\t\t\t"
-             "Coolant IN: %03.2f`C, OUT: %03.2f`C, Flow: %lu\t\t\t"
-             "Boiler  IN: %03.2f`C, OUT: %03.2f`C, Flow: %lu\t\t\t"
+             "Worker0 IN: %03.2f`C, OUT: %03.2f`C, Flow: %fliter/s;\t\t\t"
+             "Coolant IN: %03.2f`C, OUT: %03.2f`C, Flow: %fliter/s\t\t\t"
+             "Boiler  IN: %03.2f`C, OUT: %03.2f`C, Flow: %fliter/s\t\t\t"
              "Fan: %3.2f%%, Worker: %s;\t\t\tCycles: %llu; Uptime: %llius(%llus) or %s",
              boiler_ctx_copy.workers[0].termal.temp[DIR_IN].temp,
              boiler_ctx_copy.workers[0].termal.temp[DIR_OUT].temp,
@@ -196,6 +198,79 @@ void read_and_draw_sensors(hw_ow_t *hw_ow, temp_sensor_t *sensors_arr, uint8_t s
     }
 }
 
+struct counter_handler_t {
+    uint32_t last_calc;
+    QueueHandle_t evt_queue;
+};
+
+static struct counter_handler_t queues[] = {
+    {.last_calc = 0, .evt_queue = NULL},
+    {.last_calc = 0, .evt_queue = NULL},
+    {.last_calc = 0, .evt_queue = NULL},
+};
+
+static void IRAM_ATTR gpio_isr_handler(void *arg) {
+    uint32_t time = (uint32_t)esp_timer_get_time();
+    const uint8_t queues_items = sizeof(queues) / sizeof(struct counter_handler_t);
+    uint32_t item = (uint32_t)arg;
+    if (item >= queues_items) return;
+    uint32_t last_time = queues[item].last_calc;
+    uint32_t diff_time = last_time < time ? time - last_time : time + (UINT32_MAX - last_time);
+    queues[item].last_calc = time;
+    uint32_t flow = !diff_time ? 0 : (1000000000000) / (diff_time * CNT_TIC_L);
+    xQueueSendFromISR(queues[item].evt_queue, &flow, NULL);
+}
+
+void flow_calc_task(void *ctx) {
+    /* init */
+    if (!ctx) {
+        ESP_LOGW(__func__, "ctx error");
+        return;
+    }
+
+    ESP_ERROR_CHECK(esp_task_wdt_add(NULL));
+    boiler_t *boiler = (boiler_t *)ctx;
+
+    for (uint8_t i = 0; i < sizeof(queues) / sizeof(struct counter_handler_t); i++)
+        queues[i].evt_queue = xQueueCreate(1, sizeof(uint32_t));
+
+    uint64_t counters_pins =
+        ((1ull << GPIO_CNT_CLNT) | (1ull << GPIO_CNT_BOIL) | (1ull << GPIO_CNT_WRK0));
+
+    gpio_config_t io_conf;
+    io_conf.intr_type = GPIO_PIN_INTR_NEGEDGE;
+    io_conf.pin_bit_mask = counters_pins;
+    io_conf.mode = GPIO_MODE_INPUT;
+    io_conf.pull_up_en = 1;
+    gpio_config(&io_conf);
+
+    gpio_install_isr_service(0);
+    /// @todo put pointer on boiler structs
+    gpio_isr_handler_add(GPIO_CNT_CLNT, gpio_isr_handler, (void *)0);
+    gpio_isr_handler_add(GPIO_CNT_BOIL, gpio_isr_handler, (void *)1);
+    gpio_isr_handler_add(GPIO_CNT_WRK0, gpio_isr_handler, (void *)2);
+
+    for (;;) {
+        uint32_t last;
+        if (xQueueReceive(queues[0].evt_queue, &last, 10)) {
+            ESP_LOGD(__func__, "Counter(%d) flow: %fl/s\n", GPIO_CNT_CLNT, ((float)last) / 1000000);
+            boiler->colant.flow.flow = ((float)last) / 1000000;
+        } else
+            boiler->colant.flow.flow = 0;
+        if (xQueueReceive(queues[1].evt_queue, &last, 10)) {
+            ESP_LOGD(__func__, "Counter(%d) flow: %fl/s\n", GPIO_CNT_BOIL, ((float)last) / 1000000);
+            boiler->boiler.flow.flow = ((float)last) / 1000000;
+        } else
+            boiler->boiler.flow.flow = 0;
+        if (xQueueReceive(queues[2].evt_queue, &last, 10)) {
+            ESP_LOGD(__func__, "Counter(%d) flow: %fl/s\n", GPIO_CNT_WRK0, ((float)last) / 1000000);
+            boiler->workers[0].termal.flow.flow = ((float)last) / 1000000;
+        } else
+            boiler->workers[0].termal.flow.flow = 0;
+        esp_task_wdt_reset();
+    }
+}
+
 /**
  *  @brief main task for health logic
  *
@@ -236,11 +311,6 @@ void temp_mon_task(void *ctx) {
         ssd1306_dev = ssd1306_create(I2C_MASTER_NUM, SSD1306_I2C_ADDRESS);
         ssd1306_refresh_gram(ssd1306_dev);
         ssd1306_clear_screen(ssd1306_dev, 0x00);
-
-        /* pcntr init */
-        // GPIO_CNT_CLNT 34
-        // GPIO_CNT_BOIL 35
-        // GPIO_CNT_WRK0 32
 
         /* i/o gpio init */
         uint64_t out_pins_sel =
@@ -438,7 +508,7 @@ void temp_mon_task(void *ctx) {
                 boiler->cooler_motor_pwr * BDC_MCPWM_DUTY_TICK_MAX); /* multiply by max duty */
 
             /* calc worker safe zone */
-            bool worker_en0 = boiler->workers[0].termal.flow.flow > 3000 &&
+            bool worker_en0 = /*boiler->workers[0].termal.flow.flow > 0.03 &&*/
                               boiler->workers[0].termal.temp[DIR_IN].temp < 50 &&
                               boiler->workers[0].termal.temp[DIR_OUT].temp < 60;
             if (worker_en0 != boiler->workers[0].enabled) {
@@ -480,6 +550,7 @@ void app_main(void) {
     /* run health monitor */
     TaskHandle_t temp_mon_handler = NULL;
     xTaskCreate(temp_mon_task, "temp_reader", 8192, &boiler, MAIN_PRIO, &temp_mon_handler);
+    xTaskCreate(flow_calc_task, "flow_calc_task", 8192, &boiler, MAIN_PRIO, NULL);
 
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
