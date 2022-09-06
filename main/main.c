@@ -186,11 +186,11 @@ void read_and_draw_sensors(hw_ow_t *hw_ow, temp_sensor_t *sensors_arr, uint8_t s
         rom_name[6] = '\0';  // cut rom
         for (uint8_t n = 0; n < 3; n++) {
             if (ow_temp_read_sensor(hw_ow, &sensors_arr[i].rom, &sensors_arr[i].temp)) {
-                snprintf(data_str, sizeof(data_str), "%s: %03.2f`C", rom_name, sensors_arr[i].temp);
+                snprintf(data_str, sizeof(data_str), "%03.2f`C: %s", sensors_arr[i].temp, rom_name);
                 ESP_LOGI(__func__, "%s", data_str);
                 break;
             } else if (n == 3 - 1) {
-                snprintf(data_str, sizeof(data_str), "%s: error", rom_name);
+                snprintf(data_str, sizeof(data_str), "Error: %s", rom_name);
                 ESP_LOGW(__func__, "%s", data_str);
             }
         }
